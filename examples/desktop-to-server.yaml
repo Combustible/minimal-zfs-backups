@@ -1,0 +1,34 @@
+# Example: back up ipool (local desktop) to xeonpool (remote server)
+
+source:
+  pool: ipool
+
+destination:
+  pool: xeonpool
+  prefix: BACKUP           # datasets land at xeonpool/BACKUP/ipool/...
+  host: server.local       # omit this key for a local destination
+  user: root               # SSH user (omit to use current user)
+  port: 22
+
+# Explicit dataset list. Use 'discover: true' instead to auto-discover
+# all datasets where com.sun:auto-snapshot=true.
+datasets:
+  - ipool/home/bmarohn
+  - ipool/noble
+  - ipool/jammy
+  - ipool/windows
+
+# Compaction rules (applied to destination only).
+# For each pattern, keep the N most recent matching snapshots.
+# Set keep: 0 to delete all matching snapshots.
+compaction:
+  - pattern: "zfs-auto-snap_frequent-.*"
+    keep: 0
+  - pattern: "zfs-auto-snap_hourly-.*"
+    keep: 4
+  - pattern: "zfs-auto-snap_daily-.*"
+    keep: 14
+  - pattern: "zfs-auto-snap_weekly-.*"
+    keep: 8
+  - pattern: "zfs-auto-snap_monthly-.*"
+    keep: 24

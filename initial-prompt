@@ -1,0 +1,144 @@
+I want to plan out the implementation of a zfs backup manager tool. I'd like this to be written in Python for simplicity & readability.
+
+I have a lot of requirements for this, but it's difficult for me to enumerate all of them. Please ask questions as the plan proceeds and unknowns are encountered. 
+
+Fundamentally I want to be able to automate using `zfs send` and `zfs recv` to transfer snapshots between pools. 
+
+Basically - I want to be able to back up relevant datasets on one pool to another, either locally or over the network. 
+
+Here's an example: 
+
+On my local system, I have a pool named 'ipool'. It has several datasets. Here is the output of `zfs list` - with my comments added to annotate the lines: 
+```
+NAME                             USED  AVAIL  REFER  MOUNTPOINT
+ipool                           1.69T  55.6G    24K  none 
+ipool/docker                     688K  55.6G   688K  /var/lib/docker       
+ipool/home                       620G  55.6G    24K  /home                
+ipool/home/bmarohn               617G  55.6G   151G  /home/bmarohn
+ipool/home/bmarohn/NO_SNAPSHOT  25.3G  55.6G  25.3G  /home/bmarohn/NO_SNAPSHOT
+ipool/home/bmarohn/Nextcloud     325G  55.6G   325G  /home/bmarohn/Nextcloud
+ipool/jammy                     51.0G  55.6G  8.42G  /oldroot
+ipool/jammy/tmp                 11.6M  55.6G  11.0M  /oldroot/tmp
+ipool/jammy/var                 26.2G  55.6G  4.99G  /oldroot/var
+ipool/jammy/var/log              808M  55.6G   344M  /oldroot/var/log
+ipool/jammy/var/tmp               61K  55.6G    35K  /oldroot/var/tmp
+ipool/noble                     25.3G  55.6G  5.70G  /
+ipool/noble/tmp                 37.6M  55.6G  37.6M  /tmp
+ipool/noble/var                 13.6G  55.6G  3.49G  /var
+ipool/noble/var/log              547M  55.6G   127M  /var/log
+ipool/noble/var/tmp               92K  55.6G    44K  /var/tmp
+ipool/windows                    153G  55.6G   143G  -
+ipool/windows_swap              1.06G  55.6G  1.06G  -
+ipool/windows_temp              57.8G  55.6G  57.8G  -
+```
+
+Snapshots via zfs-auto-snapshot are enabled on some of these volumes, but not all of them. Here's the output of `zfs get com.sun:auto-snapshot | grep -v '@'`
+```
+NAME                                                                PROPERTY               VALUE                  SOURCE
+ipool                                                               com.sun:auto-snapshot  false                  local
+ipool/docker                                                        com.sun:auto-snapshot  false                  local
+ipool/home                                                          com.sun:auto-snapshot  false                  local
+ipool/home/bmarohn                                                  com.sun:auto-snapshot  true                   local
+ipool/home/bmarohn/NO_SNAPSHOT                                      com.sun:auto-snapshot  false                  local
+ipool/home/bmarohn/Nextcloud                                        com.sun:auto-snapshot  false                  local
+ipool/jammy                                                         com.sun:auto-snapshot  true                   local
+ipool/jammy/tmp                                                     com.sun:auto-snapshot  false                  local
+ipool/jammy/var                                                     com.sun:auto-snapshot  true                   inherited from ipool/jammy
+ipool/jammy/var/log                                                 com.sun:auto-snapshot  true                   inherited from ipool/jammy
+ipool/jammy/var/tmp                                                 com.sun:auto-snapshot  false                  local
+ipool/linux_priv                                                    com.sun:auto-snapshot  false                  inherited from ipool
+ipool/noble                                                         com.sun:auto-snapshot  true                   local
+ipool/noble/tmp                                                     com.sun:auto-snapshot  false                  local
+ipool/noble/var                                                     com.sun:auto-snapshot  true                   inherited from ipool/noble
+ipool/noble/var/log                                                 com.sun:auto-snapshot  true                   inherited from ipool/noble
+ipool/noble/var/tmp                                                 com.sun:auto-snapshot  false                  local
+ipool/windows                                                       com.sun:auto-snapshot  true                   local
+ipool/windows_swap                                                  com.sun:auto-snapshot  false                  local
+ipool/windows_temp                                                  com.sun:auto-snapshot  false                  local
+```
+
+Snapshots are enabled on all the "important" volumes whose data I don't ever want to lose. Many datasets have snapshots disabled, either because their data is ephemeral (docker), or already backed up elsewhere (Nextcloud). Snapshots are named as pool/dataset@snapshotname
+
+zfs-auto-snapshot is a snapshot rotater, which creates monthly, weekly, daily, hourly, and frequent snapshots. Here's an example of `zfs list -t all -r ipool/home/bmarohn`. Note that the automatic snapshots are prefixed with 'zfs-auto-snap' and are mixed alongside manual snapshots I've created with meanings only useful to me (pre-ender-nightmare-2025-12-07-deleteme). I've deleted some lines just to make this less verbose. 
+```
+ipool/home/bmarohn@zfs-auto-snap_monthly-2025-09-18-1447
+ipool/home/bmarohn@zfs-auto-snap_monthly-2025-10-18-1640
+ipool/home/bmarohn@backup10t-push-2025-11-11
+ipool/home/bmarohn@pre-ender-nightmare-2025-12-07-deleteme
+ipool/home/bmarohn@zfs-auto-snap_monthly-2025-12-14-1020
+ipool/home/bmarohn@zfs-auto-snap_weekly-2025-12-30-1544
+ipool/home/bmarohn@zfs-auto-snap_weekly-2026-01-06-1540
+ipool/home/bmarohn@pre-update-gregtech-from-2.8.0-beta4-2026-01-08
+ipool/home/bmarohn@zfs-auto-snap_weekly-2026-01-13-1431
+ipool/home/bmarohn@zfs-auto-snap_monthly-2026-01-14-1600
+ipool/home/bmarohn@zfs-auto-snap_daily-2026-01-18-1535
+ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-03-1539
+ipool/home/bmarohn@zfs-auto-snap_weekly-2026-02-03-1544
+ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-04-1537
+ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-09-1539
+ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-10-1538
+ipool/home/bmarohn@zfs-auto-snap_weekly-2026-02-10-1543
+ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-12-1540
+ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-13-1537
+ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-14-1536
+ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-15-1531
+ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-16-1540
+ipool/home/bmarohn@zfs-auto-snap_hourly-2026-02-17-0617
+ipool/home/bmarohn@zfs-auto-snap_hourly-2026-02-17-1417
+ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-17-1450
+ipool/home/bmarohn@zfs-auto-snap_weekly-2026-02-17-1455
+ipool/home/bmarohn@zfs-auto-snap_hourly-2026-02-17-1517
+ipool/home/bmarohn@zfs-auto-snap_hourly-2026-02-17-1717
+ipool/home/bmarohn@zfs-auto-snap_hourly-2026-02-17-1817
+ipool/home/bmarohn@zfs-auto-snap_hourly-2026-02-17-1917
+ipool/home/bmarohn@zfs-auto-snap_frequent-2026-02-17-2200
+ipool/home/bmarohn@zfs-auto-snap_frequent-2026-02-17-2215
+ipool/home/bmarohn@zfs-auto-snap_hourly-2026-02-17-2217
+ipool/home/bmarohn@zfs-auto-snap_frequent-2026-02-17-2230
+```
+
+The purpose of this tool will be to transfer these snapshots to another pool on another system, where they are parked under a clearly labeled backup dataset. Note this can happen multiple times - I back up my desktop to my server, and my server to an offline hard drive. 
+
+Here's the backup structure on the server of this same ipool, with snapshots shown just for that bmarohn dataset: 
+```
+xeonpool/BACKUP                                
+xeonpool/BACKUP/ipool                          
+xeonpool/BACKUP/ipool/home                     
+xeonpool/BACKUP/ipool/home/bmarohn             
+xeonpool/BACKUP/ipool/home/bmarohn@zfs-auto-snap_monthly-2024-07-26-1449        2.58G      -  91.0G  -
+xeonpool/BACKUP/ipool/home/bmarohn@zfs-auto-snap_monthly-2024-08-26-1448        3.95G      -  92.0G  -
+xeonpool/BACKUP/ipool/home/bmarohn@zfs-auto-snap_monthly-2024-09-25-1446           0B      -   106G  -
+xeonpool/BACKUP/ipool/home/bmarohn@backup10t-push-2024-09-29                       0B      -   106G  -
+xeonpool/BACKUP/ipool/home/bmarohn@zfs-auto-snap_monthly-2024-10-25-1446        13.5G      -   126G  -
+xeonpool/BACKUP/ipool/home/bmarohn@zfs-auto-snap_monthly-2024-11-24-1549        11.5G      -   130G  -
+...
+xeonpool/BACKUP/ipool/home/bmarohn@zfs-auto-snap_monthly-2025-10-18-1640        4.36G      -   149G  -
+xeonpool/BACKUP/ipool/home/bmarohn@backup10t-push-2025-11-11                       0B      -   149G  -
+xeonpool/BACKUP/ipool/jammy                    
+xeonpool/BACKUP/ipool/jammy/var                
+xeonpool/BACKUP/ipool/jammy/var/log            
+xeonpool/BACKUP/ipool/windows                  
+```
+I have an old bash script automating this that I've used for 10+ years, and it's time to rewrite it and add features. This script does most of the base of what I want, but can only operate on pools that are on the same machine. 
+
+Read the script to understand how it works: 
+```
+./zfs-offsite-backup.sh
+```
+
+Note that this script is extremely verbose, and designed to verify everything it does is safe, and even then still prompts the user before doing anything that could result in data loss. It's absolutely critical that this tool never results in lost data. 
+
+**What I want**
+- A python tool that instruments running `zfs send -I` and `zfs recv` commands appropriately, on either local or remote systems. 
+- On the remote system, we need to figure out how best to pipe over the data. My shell script doesn't handle this today - and I'd like to handle this via the python tool launching SSH and netcat commands to create a tunnel. 
+- The tool only to run on the "pushing" machine, and if the target pool is on a remote, it'll use the environment's SSH agent to authenticate. There will not be a "server" - only a single app that can run commands via SSH locally and remotely. 
+- The python code to use the "dependency injection" design pattern so that each module can be independently tested. 
+- Clear yaml configuration files for source pool (always assumed local), target pool (local or remote)
+- Unlike my shell script, I want to transfer all snapshots that exist since the last common point, not only monthly ones. I want a "compaction" mode of some kind where I can specify in the config that I want to keep only the 24 most recent snapshots matching 'zfs-auto-snap-monthly.*' regex (i.e. config should have a list of patterns / retention amounts).
+- I want everything to have a dry-run mode, where you can see what would happen without doing anything. 
+- I want test coverage which is able to simulate the results of various zfs commands (again, dependency injection so these classes can be swapped out with mock/testing classes). The tests should have a quiet mode and a verbose mode to show what's happening. 
+- The only thing that this program should ever delete is snapshots. There should not be any facility to delete datasets, or to run 'zfs recv -F' which overwrites existing snapshots - if these are needed, the program should print the commands and ask the user to run them. 
+
+Use your judgement, but if something could go a couple different ways, ask what I'd prefer. 
+
+Please generate a plan for this implementation. We will implement this in the current directory (~/dev/zfs-backup-manager)
