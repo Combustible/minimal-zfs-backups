@@ -4,7 +4,7 @@ from __future__ import annotations
 import subprocess
 from typing import TYPE_CHECKING
 
-from zbm.executor import ExecutorError
+from zbm.executor import ExecutorError, SSHExecutor
 from zbm.models import Dataset, Snapshot
 
 if TYPE_CHECKING:
@@ -101,8 +101,7 @@ def send_incremental(
     if dry_run or verbose:
         import shlex
         print(f"  [send] {shlex.join(send_cmd)}")
-        if hasattr(dst_executor, '_ssh_prefix'):
-            # SSHExecutor
+        if isinstance(dst_executor, SSHExecutor):
             print(f"  [recv] ssh ... {shlex.join(recv_cmd)}")
         else:
             print(f"  [recv] {shlex.join(recv_cmd)}")

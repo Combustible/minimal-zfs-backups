@@ -7,9 +7,9 @@ from zbm import zfs
 from zbm.executor import ExecutorError
 from zbm.models import Snapshot
 from tests.conftest import (
-    DST_BMAROHN_SNAPS,
+    DST_USER_SNAPS,
     MockExecutor,
-    SRC_BMAROHN_SNAPS,
+    SRC_USER_SNAPS,
     make_standard_responses,
 )
 
@@ -17,8 +17,8 @@ from tests.conftest import (
 def test_list_snapshots_basic():
     src_responses, _ = make_standard_responses()
     exec_ = MockExecutor(src_responses)
-    snaps = zfs.list_snapshots("ipool/home/bmarohn", exec_)
-    assert len(snaps) == len(SRC_BMAROHN_SNAPS)
+    snaps = zfs.list_snapshots("ipool/home/user", exec_)
+    assert len(snaps) == len(SRC_USER_SNAPS)
     assert snaps[0].name == "zfs-auto-snap_monthly-2025-09-18-1447"
     assert snaps[-1].name == "zfs-auto-snap_frequent-2026-02-17-2215"
 
@@ -26,23 +26,23 @@ def test_list_snapshots_basic():
 def test_list_snapshots_filters_children():
     """Snapshots from child datasets should not appear in parent's list."""
     output = (
-        "ipool/home/bmarohn@snap-a\n"
-        "ipool/home/bmarohn/subdir@snap-b\n"  # child — should be excluded
-        "ipool/home/bmarohn@snap-c\n"
+        "ipool/home/user@snap-a\n"
+        "ipool/home/user/subdir@snap-b\n"  # child — should be excluded
+        "ipool/home/user@snap-c\n"
     )
     exec_ = MockExecutor({
-        ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", "ipool/home/bmarohn"):
+        ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", "ipool/home/user"):
             output,
     })
-    snaps = zfs.list_snapshots("ipool/home/bmarohn", exec_)
+    snaps = zfs.list_snapshots("ipool/home/user", exec_)
     assert len(snaps) == 2
-    assert all(s.dataset == "ipool/home/bmarohn" for s in snaps)
+    assert all(s.dataset == "ipool/home/user" for s in snaps)
 
 
 def test_find_common_snapshot_basic():
-    src_snaps = [Snapshot.parse(s) for s in SRC_BMAROHN_SNAPS]
-    dst_snaps = [Snapshot.parse(s.replace("ipool/home/bmarohn", "xeonpool/BACKUP/ipool/home/bmarohn"))
-                 for s in DST_BMAROHN_SNAPS]
+    src_snaps = [Snapshot.parse(s) for s in SRC_USER_SNAPS]
+    dst_snaps = [Snapshot.parse(s.replace("ipool/home/user", "xeonpool/BACKUP/ipool/home/user"))
+                 for s in DST_USER_SNAPS]
     common = zfs.find_common_snapshot(src_snaps, dst_snaps)
     assert common is not None
     assert common.name == "backup10t-push-2025-11-11"
@@ -72,10 +72,10 @@ def test_find_common_snapshot_returns_newest_common():
 
 def test_dataset_exists_true():
     exec_ = MockExecutor({
-        ("zfs", "list", "-H", "-o", "name", "ipool/home/bmarohn"):
-            "ipool/home/bmarohn\n",
+        ("zfs", "list", "-H", "-o", "name", "ipool/home/user"):
+            "ipool/home/user\n",
     })
-    assert zfs.dataset_exists("ipool/home/bmarohn", exec_) is True
+    assert zfs.dataset_exists("ipool/home/user", exec_) is True
 
 
 def test_dataset_exists_false():
@@ -92,15 +92,15 @@ def test_send_incremental_dry_run(capsys):
     src_exec = MockExecutor(src_responses, verbose=False)
     dst_exec = MockExecutor({}, verbose=False)
 
-    common = Snapshot.parse("ipool/home/bmarohn@backup10t-push-2025-11-11")
-    latest = Snapshot.parse("ipool/home/bmarohn@zfs-auto-snap_frequent-2026-02-17-2215")
+    common = Snapshot.parse("ipool/home/user@backup10t-push-2025-11-11")
+    latest = Snapshot.parse("ipool/home/user@zfs-auto-snap_frequent-2026-02-17-2215")
 
     zfs.send_incremental(
         common=common,
         latest=latest,
         src_executor=src_exec,
         dst_executor=dst_exec,
-        dst_dataset="xeonpool/BACKUP/ipool/home/bmarohn",
+        dst_dataset="xeonpool/BACKUP/ipool/home/user",
         dry_run=True,
         verbose=True,
     )
@@ -114,7 +114,7 @@ def test_send_incremental_dry_run(capsys):
 
 def test_destroy_snapshot_dry_run(capsys):
     exec_ = MockExecutor({})
-    snap = Snapshot.parse("xeonpool/BACKUP/ipool/home/bmarohn@old-snap")
+    snap = Snapshot.parse("xeonpool/BACKUP/ipool/home/user@old-snap")
     zfs.destroy_snapshot(snap, exec_, dry_run=True, verbose=True)
     captured = capsys.readouterr()
     assert "zfs destroy" in captured.out

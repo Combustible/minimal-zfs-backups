@@ -7,15 +7,15 @@ from zbm.backup import run_backup
 from zbm.executor import ExecutorError
 from zbm.models import DestinationConfig, JobConfig, SourceConfig
 from tests.conftest import (
-    DST_BMAROHN_SNAPS,
+    DST_USER_SNAPS,
     MockExecutor,
-    SRC_BMAROHN_SNAPS,
+    SRC_USER_SNAPS,
     _snap_list_output,
     make_standard_responses,
 )
 
-SRC = "ipool/home/bmarohn"
-DST = "xeonpool/BACKUP/ipool/home/bmarohn"
+SRC = "ipool/home/user"
+DST = "xeonpool/BACKUP/ipool/home/user"
 
 
 def _make_config(datasets=None):
@@ -42,8 +42,8 @@ def test_backup_happy_path_dry_run(capsys):
 
 def test_backup_up_to_date(capsys):
     """When src and dst have the same HEAD, report 'already up to date'."""
-    snap = "ipool/home/bmarohn@zfs-auto-snap_monthly-2026-01-14-1600"
-    dst_snap = snap.replace("ipool/home/bmarohn", DST)
+    snap = "ipool/home/user@zfs-auto-snap_monthly-2026-01-14-1600"
+    dst_snap = snap.replace("ipool/home/user", DST)
     src_r = {
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", SRC):
             snap + "\n",
@@ -66,12 +66,12 @@ def test_backup_no_common_snapshot(capsys):
     """When no common snapshot exists, skip and print bootstrap command."""
     src_r = {
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", SRC):
-            "ipool/home/bmarohn@snap-new\n",
+            "ipool/home/user@snap-new\n",
         ("zfs", "list", "-H", "-o", "name", SRC): SRC + "\n",
     }
     dst_r = {
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", DST):
-            "xeonpool/BACKUP/ipool/home/bmarohn@snap-old\n",
+            "xeonpool/BACKUP/ipool/home/user@snap-old\n",
         ("zfs", "list", "-H", "-o", "name", DST): DST + "\n",
     }
     src_exec = MockExecutor(src_r)
@@ -80,14 +80,14 @@ def test_backup_no_common_snapshot(capsys):
     assert rc == 1  # partial failure
     captured = capsys.readouterr()
     assert "No common snapshot" in captured.out
-    assert "zfs send -p" in captured.out  # bootstrap command shown
+    assert "zfs send " in captured.out  # bootstrap command shown
 
 
 def test_backup_dest_missing(capsys):
     """When destination dataset doesn't exist, skip and show bootstrap command."""
     src_r = {
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", SRC):
-            "ipool/home/bmarohn@snap-a\n",
+            "ipool/home/user@snap-a\n",
         ("zfs", "list", "-H", "-o", "name", SRC): SRC + "\n",
         ("zfs", "list", "-H", "-o", "name", DST):
             ExecutorError(["zfs", "list"], 1, "does not exist"),
@@ -105,29 +105,31 @@ def test_backup_dest_missing(capsys):
 
 
 def test_backup_rollback_needed(capsys):
-    """When dest HEAD is ahead of common, warn and skip."""
+    """When dest HEAD is ahead of common, plan a rollback and show victims."""
     # Src: snap-a, snap-b, snap-c
     # Dst: snap-a, snap-b, snap-d (snap-d not on src)
     src_r = {
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", SRC):
-            "ipool/home/bmarohn@snap-a\nipool/home/bmarohn@snap-b\nipool/home/bmarohn@snap-c\n",
+            "ipool/home/user@snap-a\nipool/home/user@snap-b\nipool/home/user@snap-c\n",
         ("zfs", "list", "-H", "-o", "name", SRC): SRC + "\n",
     }
     dst_r = {
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", DST): (
-            "xeonpool/BACKUP/ipool/home/bmarohn@snap-a\n"
-            "xeonpool/BACKUP/ipool/home/bmarohn@snap-b\n"
-            "xeonpool/BACKUP/ipool/home/bmarohn@snap-d\n"
+            "xeonpool/BACKUP/ipool/home/user@snap-a\n"
+            "xeonpool/BACKUP/ipool/home/user@snap-b\n"
+            "xeonpool/BACKUP/ipool/home/user@snap-d\n"
         ),
         ("zfs", "list", "-H", "-o", "name", DST): DST + "\n",
     }
     src_exec = MockExecutor(src_r)
     dst_exec = MockExecutor(dst_r)
     rc = run_backup(_make_config(), src_exec, dst_exec, dry_run=True, no_confirm=True)
-    assert rc == 1
+    assert rc == 0  # dry-run rollback + send succeeds
     captured = capsys.readouterr()
     assert "rollback" in captured.out.lower()
-    assert "zfs rollback" in captured.out
+    assert "Rollback to: @snap-b" in captured.out
+    assert "@snap-d" in captured.out  # victim shown
+    assert "1 rollback(s)" in captured.out  # summary
 
 
 def test_backup_no_rollback_when_common_is_dest_head(capsys):
@@ -136,14 +138,14 @@ def test_backup_no_rollback_when_common_is_dest_head(capsys):
     # Dst: snap-a, snap-d, snap-b  (snap-d not on src, but common=b is HEAD)
     src_r = {
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", SRC):
-            "ipool/home/bmarohn@snap-a\nipool/home/bmarohn@snap-b\nipool/home/bmarohn@snap-c\n",
+            "ipool/home/user@snap-a\nipool/home/user@snap-b\nipool/home/user@snap-c\n",
         ("zfs", "list", "-H", "-o", "name", SRC): SRC + "\n",
     }
     dst_r = {
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", DST): (
-            "xeonpool/BACKUP/ipool/home/bmarohn@snap-a\n"
-            "xeonpool/BACKUP/ipool/home/bmarohn@snap-d\n"
-            "xeonpool/BACKUP/ipool/home/bmarohn@snap-b\n"
+            "xeonpool/BACKUP/ipool/home/user@snap-a\n"
+            "xeonpool/BACKUP/ipool/home/user@snap-d\n"
+            "xeonpool/BACKUP/ipool/home/user@snap-b\n"
         ),
         ("zfs", "list", "-H", "-o", "name", DST): DST + "\n",
     }
@@ -162,15 +164,15 @@ def test_backup_common_later_than_dest_only_snaps(capsys):
     # Dst: snap-a, snap-d, snap-b, snap-c  (common=c is HEAD, up to date)
     src_r = {
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", SRC):
-            "ipool/home/bmarohn@snap-a\nipool/home/bmarohn@snap-b\nipool/home/bmarohn@snap-c\n",
+            "ipool/home/user@snap-a\nipool/home/user@snap-b\nipool/home/user@snap-c\n",
         ("zfs", "list", "-H", "-o", "name", SRC): SRC + "\n",
     }
     dst_r = {
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", DST): (
-            "xeonpool/BACKUP/ipool/home/bmarohn@snap-a\n"
-            "xeonpool/BACKUP/ipool/home/bmarohn@snap-d\n"
-            "xeonpool/BACKUP/ipool/home/bmarohn@snap-b\n"
-            "xeonpool/BACKUP/ipool/home/bmarohn@snap-c\n"
+            "xeonpool/BACKUP/ipool/home/user@snap-a\n"
+            "xeonpool/BACKUP/ipool/home/user@snap-d\n"
+            "xeonpool/BACKUP/ipool/home/user@snap-b\n"
+            "xeonpool/BACKUP/ipool/home/user@snap-c\n"
         ),
         ("zfs", "list", "-H", "-o", "name", DST): DST + "\n",
     }

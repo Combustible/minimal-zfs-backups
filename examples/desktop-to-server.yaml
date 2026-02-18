@@ -10,10 +10,10 @@ destination:
   user: root               # SSH user (omit to use current user)
   port: 22
 
-# Explicit dataset list. Use 'discover: true' instead to auto-discover
+# Explicit dataset list. Use 'zbm discover' to auto-discover
 # all datasets where com.sun:auto-snapshot=true.
 datasets:
-  - ipool/home/bmarohn
+  - ipool/home/user
   - ipool/noble
   - ipool/jammy
   - ipool/windows
@@ -21,6 +21,7 @@ datasets:
 # Compaction rules (applied to destination only).
 # For each pattern, keep the N most recent matching snapshots.
 # Set keep: 0 to delete all matching snapshots.
+# Patterns use regex fullmatch — they must match the entire snapshot name after @.
 compaction:
   - pattern: "zfs-auto-snap_frequent-.*"
     keep: 0

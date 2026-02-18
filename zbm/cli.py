@@ -71,10 +71,23 @@ def cmd_status(args) -> int:
     src_exec, dst_exec = _make_executors(config)
     datasets = config.datasets
 
+    from zbm.executor import ExecutorError
+    any_error = False
     for src_dataset in datasets:
         dst_dataset = config.destination.dataset_for(src_dataset)
-        src_snaps = zfs.list_snapshots(src_dataset, src_exec)
-        dst_snaps = zfs.list_snapshots(dst_dataset, dst_exec)
+        try:
+            src_snaps = zfs.list_snapshots(src_dataset, src_exec)
+        except ExecutorError:
+            print(f"{src_dataset}: ERROR (source dataset not found)")
+            any_error = True
+            continue
+        try:
+            dst_snaps = zfs.list_snapshots(dst_dataset, dst_exec)
+        except ExecutorError:
+            print(f"{src_dataset}: DESTINATION MISSING")
+            any_error = True
+            continue
+
         common = zfs.find_common_snapshot(src_snaps, dst_snaps)
 
         if common is None:
@@ -82,11 +95,11 @@ def cmd_status(args) -> int:
         else:
             common_idx = next(i for i, s in enumerate(src_snaps) if s.name == common.name)
             behind = len(src_snaps) - common_idx - 1
-            status = f"UP TO DATE" if behind == 0 else f"{behind} snapshot(s) behind"
+            status = "UP TO DATE" if behind == 0 else f"{behind} snapshot(s) behind"
 
         print(f"{src_dataset}: {status}")
 
-    return 0
+    return 1 if any_error else 0
 
 
 def cmd_list(args) -> int:
@@ -101,17 +114,22 @@ def cmd_list(args) -> int:
     src_exec, dst_exec = _make_executors(config)
     datasets = config.datasets
 
+    from zbm.executor import ExecutorError
     print(f"{'Dataset':<45} {'Src snaps':>10} {'Dst snaps':>10}")
     print("-" * 67)
     for src_dataset in datasets:
         dst_dataset = config.destination.dataset_for(src_dataset)
-        src_snaps = zfs.list_snapshots(src_dataset, src_exec)
+        try:
+            src_snaps = zfs.list_snapshots(src_dataset, src_exec)
+            src_count = str(len(src_snaps))
+        except ExecutorError:
+            src_count = "missing"
         try:
             dst_snaps = zfs.list_snapshots(dst_dataset, dst_exec)
             dst_count = str(len(dst_snaps))
-        except Exception:
+        except ExecutorError:
             dst_count = "missing"
-        print(f"{src_dataset:<45} {len(src_snaps):>10} {dst_count:>10}")
+        print(f"{src_dataset:<45} {src_count:>10} {dst_count:>10}")
 
     return 0
 

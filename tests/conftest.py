@@ -65,35 +65,35 @@ class MockExecutor:
 # Snapshot data drawn from the real examples in the prompt
 # ---------------------------------------------------------------------------
 
-SRC_BMAROHN_SNAPS = [
-    "ipool/home/bmarohn@zfs-auto-snap_monthly-2025-09-18-1447",
-    "ipool/home/bmarohn@zfs-auto-snap_monthly-2025-10-18-1640",
-    "ipool/home/bmarohn@backup10t-push-2025-11-11",
-    "ipool/home/bmarohn@zfs-auto-snap_monthly-2025-12-14-1020",
-    "ipool/home/bmarohn@zfs-auto-snap_weekly-2025-12-30-1544",
-    "ipool/home/bmarohn@zfs-auto-snap_weekly-2026-01-06-1540",
-    "ipool/home/bmarohn@zfs-auto-snap_monthly-2026-01-14-1600",
-    "ipool/home/bmarohn@zfs-auto-snap_daily-2026-01-18-1535",
-    "ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-03-1539",
-    "ipool/home/bmarohn@zfs-auto-snap_weekly-2026-02-03-1544",
-    "ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-04-1537",
-    "ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-09-1539",
-    "ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-10-1538",
-    "ipool/home/bmarohn@zfs-auto-snap_weekly-2026-02-10-1543",
-    "ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-12-1540",
-    "ipool/home/bmarohn@zfs-auto-snap_daily-2026-02-17-1450",
-    "ipool/home/bmarohn@zfs-auto-snap_weekly-2026-02-17-1455",
-    "ipool/home/bmarohn@zfs-auto-snap_hourly-2026-02-17-1717",
-    "ipool/home/bmarohn@zfs-auto-snap_hourly-2026-02-17-1917",
-    "ipool/home/bmarohn@zfs-auto-snap_frequent-2026-02-17-2200",
-    "ipool/home/bmarohn@zfs-auto-snap_frequent-2026-02-17-2215",
+SRC_USER_SNAPS = [
+    "ipool/home/user@zfs-auto-snap_monthly-2025-09-18-1447",
+    "ipool/home/user@zfs-auto-snap_monthly-2025-10-18-1640",
+    "ipool/home/user@backup10t-push-2025-11-11",
+    "ipool/home/user@zfs-auto-snap_monthly-2025-12-14-1020",
+    "ipool/home/user@zfs-auto-snap_weekly-2025-12-30-1544",
+    "ipool/home/user@zfs-auto-snap_weekly-2026-01-06-1540",
+    "ipool/home/user@zfs-auto-snap_monthly-2026-01-14-1600",
+    "ipool/home/user@zfs-auto-snap_daily-2026-01-18-1535",
+    "ipool/home/user@zfs-auto-snap_daily-2026-02-03-1539",
+    "ipool/home/user@zfs-auto-snap_weekly-2026-02-03-1544",
+    "ipool/home/user@zfs-auto-snap_daily-2026-02-04-1537",
+    "ipool/home/user@zfs-auto-snap_daily-2026-02-09-1539",
+    "ipool/home/user@zfs-auto-snap_daily-2026-02-10-1538",
+    "ipool/home/user@zfs-auto-snap_weekly-2026-02-10-1543",
+    "ipool/home/user@zfs-auto-snap_daily-2026-02-12-1540",
+    "ipool/home/user@zfs-auto-snap_daily-2026-02-17-1450",
+    "ipool/home/user@zfs-auto-snap_weekly-2026-02-17-1455",
+    "ipool/home/user@zfs-auto-snap_hourly-2026-02-17-1717",
+    "ipool/home/user@zfs-auto-snap_hourly-2026-02-17-1917",
+    "ipool/home/user@zfs-auto-snap_frequent-2026-02-17-2200",
+    "ipool/home/user@zfs-auto-snap_frequent-2026-02-17-2215",
 ]
 
 # Destination has synced up to backup10t-push-2025-11-11
-DST_BMAROHN_SNAPS = [
-    "xeonpool/BACKUP/ipool/home/bmarohn@zfs-auto-snap_monthly-2025-09-18-1447",
-    "xeonpool/BACKUP/ipool/home/bmarohn@zfs-auto-snap_monthly-2025-10-18-1640",
-    "xeonpool/BACKUP/ipool/home/bmarohn@backup10t-push-2025-11-11",
+DST_USER_SNAPS = [
+    "xeonpool/BACKUP/ipool/home/user@zfs-auto-snap_monthly-2025-09-18-1447",
+    "xeonpool/BACKUP/ipool/home/user@zfs-auto-snap_monthly-2025-10-18-1640",
+    "xeonpool/BACKUP/ipool/home/user@backup10t-push-2025-11-11",
 ]
 
 
@@ -102,8 +102,8 @@ def _snap_list_output(full_names: list[str]) -> str:
 
 
 def make_standard_responses(
-    src_dataset: str = "ipool/home/bmarohn",
-    dst_dataset: str = "xeonpool/BACKUP/ipool/home/bmarohn",
+    src_dataset: str = "ipool/home/user",
+    dst_dataset: str = "xeonpool/BACKUP/ipool/home/user",
     src_snaps: list[str] | None = None,
     dst_snaps: list[str] | None = None,
 ) -> tuple[dict, dict]:
@@ -111,9 +111,9 @@ def make_standard_responses(
     Return (src_responses, dst_responses) dicts for MockExecutors.
     """
     if src_snaps is None:
-        src_snaps = SRC_BMAROHN_SNAPS
+        src_snaps = SRC_USER_SNAPS
     if dst_snaps is None:
-        dst_snaps = DST_BMAROHN_SNAPS
+        dst_snaps = DST_USER_SNAPS
 
     src_responses = {
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", src_dataset):

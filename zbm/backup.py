@@ -3,14 +3,22 @@ from __future__ import annotations
 
 import shlex
 import sys
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from zbm import zfs
-from zbm.executor import ExecutorError
+from zbm.executor import ExecutorError, SSHExecutor
+from zbm.models import Snapshot
 
 if TYPE_CHECKING:
     from zbm.executor import Executor
     from zbm.models import JobConfig
+
+# ANSI color codes
+GREEN = "\033[32m"
+RED = "\033[31m"
+YELLOW = "\033[33m"
+RESET = "\033[0m"
 
 
 def _confirm(prompt: str) -> bool:
@@ -23,30 +31,125 @@ def _confirm(prompt: str) -> bool:
     return answer in ("y", "yes")
 
 
-def _print_initial_send_commands(
+def _format_bootstrap_command(
     src_dataset: str,
     first_snap: str,
     dst_executor: "Executor",
     dst_dataset: str,
-) -> None:
-    """Print commands to bootstrap a dataset that has no common snapshot."""
+) -> str:
+    """Return the bootstrap command string for a dataset with no common snapshot."""
     recv_cmd = shlex.join(["zfs", "recv", dst_dataset])
-    if hasattr(dst_executor, 'host'):
-        # SSHExecutor
+    if isinstance(dst_executor, SSHExecutor):
         dest = (
             f"{dst_executor.user}@{dst_executor.host}"
             if dst_executor.user else dst_executor.host
         )
-        print(
-            f"    To initialize, run:\n"
-            f"    zfs send -p {src_dataset}@{first_snap} | "
-            f"ssh {dest} {recv_cmd}"
-        )
+        return f"zfs send {src_dataset}@{first_snap} | ssh {dest} {recv_cmd}"
     else:
-        print(
-            f"    To initialize, run:\n"
-            f"    zfs send -p {src_dataset}@{first_snap} | {recv_cmd}"
+        return f"zfs send {src_dataset}@{first_snap} | {recv_cmd}"
+
+
+@dataclass
+class _DatasetPlan:
+    """Plan for a single dataset within a backup job."""
+    src_dataset: str
+    dst_dataset: str
+    # One of: "send", "up_to_date", "rollback_and_send", "error", "skip"
+    action: str = "skip"
+    # For send / rollback_and_send
+    common: Snapshot | None = None
+    latest: Snapshot | None = None
+    new_snap_count: int = 0
+    # For rollback_and_send: snapshots after common on dest that will be removed
+    rollback_victims: list[Snapshot] = field(default_factory=list)
+    # Error/skip reason
+    message: str = ""
+    # Bootstrap command (for missing dest or no common snapshot)
+    bootstrap_cmd: str = ""
+
+
+def _plan_dataset(
+    src_dataset: str,
+    dst_dataset: str,
+    src_executor: "Executor",
+    dst_executor: "Executor",
+    verbose: bool = False,
+) -> _DatasetPlan:
+    """Analyze a dataset and return a plan for what to do."""
+    plan = _DatasetPlan(src_dataset=src_dataset, dst_dataset=dst_dataset)
+
+    # Check source exists
+    if not zfs.dataset_exists(src_dataset, src_executor):
+        plan.action = "error"
+        plan.message = f"Source dataset does not exist: {src_dataset}"
+        return plan
+
+    # Check destination exists
+    if not zfs.dataset_exists(dst_dataset, dst_executor):
+        plan.action = "error"
+        plan.message = f"Destination dataset does not exist: {dst_dataset}"
+        src_snaps = zfs.list_snapshots(src_dataset, src_executor)
+        if src_snaps:
+            plan.bootstrap_cmd = _format_bootstrap_command(
+                src_dataset, src_snaps[0].name, dst_executor, dst_dataset
+            )
+        return plan
+
+    # List snapshots
+    src_snaps = zfs.list_snapshots(src_dataset, src_executor)
+    dst_snaps = zfs.list_snapshots(dst_dataset, dst_executor)
+
+    if verbose:
+        print(f"  {src_dataset}: {len(src_snaps)} src, {len(dst_snaps)} dst snapshots")
+
+    if not src_snaps:
+        plan.action = "skip"
+        plan.message = "Source has no snapshots"
+        return plan
+
+    # Find common snapshot
+    common = zfs.find_common_snapshot(src_snaps, dst_snaps)
+
+    if common is None:
+        plan.action = "error"
+        plan.message = "No common snapshot found between source and destination"
+        plan.bootstrap_cmd = _format_bootstrap_command(
+            src_dataset, src_snaps[0].name, dst_executor, dst_dataset
         )
+        return plan
+
+    plan.common = common
+
+    # Check if rollback needed (dest has snapshots after common)
+    needs_rollback = dst_snaps and dst_snaps[-1].name != common.name
+    if needs_rollback:
+        # Find the common snapshot index in dst and collect victims
+        common_dst_idx = next(
+            i for i, s in enumerate(dst_snaps) if s.name == common.name
+        )
+        plan.rollback_victims = dst_snaps[common_dst_idx + 1:]
+
+    # Collect new snapshots to send
+    common_src_idx = next(
+        i for i, s in enumerate(src_snaps) if s.name == common.name
+    )
+    new_snaps = src_snaps[common_src_idx + 1:]
+
+    if not new_snaps and not needs_rollback:
+        plan.action = "up_to_date"
+        plan.message = "Already up to date"
+        return plan
+
+    if needs_rollback:
+        plan.action = "rollback_and_send" if new_snaps else "rollback_and_send"
+    else:
+        plan.action = "send"
+
+    if new_snaps:
+        plan.latest = new_snaps[-1]
+        plan.new_snap_count = len(new_snaps)
+
+    return plan
 
 
 def run_backup(
@@ -60,12 +163,9 @@ def run_backup(
     """
     Run a backup job. Returns exit code (0=success, 1=partial failure).
 
-    For each dataset:
-    - List source and destination snapshots
-    - Find most recent common snapshot
-    - If none: print bootstrap command, skip
-    - If dest HEAD is ahead of common: warn, print rollback command, skip
-    - Send all snapshots from common to latest (dry-run or live)
+    Two-pass approach:
+    1. Plan: analyze all datasets, determine actions needed
+    2. Execute: prompt once for rollbacks if needed, then send
     """
     datasets = config.datasets
 
@@ -73,114 +173,145 @@ def run_backup(
         print("No datasets to back up.", file=sys.stderr)
         return 1
 
-    any_error = False
-
+    # --- Phase 1: Plan ---
+    plans: list[_DatasetPlan] = []
     for src_dataset in datasets:
-        print(f"\n{'='*60}")
-        print(f"Dataset: {src_dataset}")
         dst_dataset = config.destination.dataset_for(src_dataset)
-        print(f"  -> {dst_dataset}")
-
-        # --- check source exists ---
-        if not zfs.dataset_exists(src_dataset, src_executor):
-            print(f"  ERROR: source dataset does not exist: {src_dataset}")
-            any_error = True
-            continue
-
-        # --- check destination exists ---
-        if not zfs.dataset_exists(dst_dataset, dst_executor):
-            print(f"  WARNING: destination dataset does not exist: {dst_dataset}")
-            # Get first source snapshot for bootstrap command
-            src_snaps = zfs.list_snapshots(src_dataset, src_executor)
-            if src_snaps:
-                _print_initial_send_commands(
-                    src_dataset, src_snaps[0].name, dst_executor, dst_dataset
-                )
-            else:
-                print("  Source has no snapshots. Nothing to do.")
-            any_error = True
-            continue
-
-        # --- list snapshots ---
-        src_snaps = zfs.list_snapshots(src_dataset, src_executor)
-        dst_snaps = zfs.list_snapshots(dst_dataset, dst_executor)
-
-        if verbose:
-            print(f"  Source snapshots: {len(src_snaps)}")
-            print(f"  Dest   snapshots: {len(dst_snaps)}")
-
-        if not src_snaps:
-            print("  Source has no snapshots. Nothing to do.")
-            continue
-
-        # --- find common snapshot ---
-        common = zfs.find_common_snapshot(src_snaps, dst_snaps)
-
-        if common is None:
-            print("  ERROR: No common snapshot found between source and destination.")
-            if src_snaps:
-                _print_initial_send_commands(
-                    src_dataset, src_snaps[0].name, dst_executor, dst_dataset
-                )
-            any_error = True
-            continue
-
-        print(f"  Common: @{common.name}")
-
-        # --- check if dest is ahead of common (rollback needed) ---
-        if dst_snaps and dst_snaps[-1].name != common.name:
-            print(
-                f"  WARNING: Destination HEAD (@{dst_snaps[-1].name}) is newer than "
-                f"common snapshot (@{common.name})."
-            )
-            print(
-                f"  Destination has snapshots that don't exist on source. "
-                f"A rollback is required before receiving."
-            )
-            print(
-                f"  To fix manually, run:\n"
-                f"    zfs rollback -r {dst_dataset}@{common.name}"
-            )
-            print("  Skipping this dataset to avoid data loss.")
-            any_error = True
-            continue
-
-        # --- collect new snapshots to send ---
-        common_idx = next(
-            i for i, s in enumerate(src_snaps) if s.name == common.name
+        plan = _plan_dataset(
+            src_dataset, dst_dataset, src_executor, dst_executor, verbose
         )
-        new_snaps = src_snaps[common_idx + 1:]
+        plans.append(plan)
 
-        if not new_snaps:
-            print("  Already up to date.")
-            continue
+    # --- Print plan summary ---
+    rollback_plans = [p for p in plans if p.action == "rollback_and_send"]
+    send_plans = [p for p in plans if p.action == "send"]
+    up_to_date_plans = [p for p in plans if p.action == "up_to_date"]
+    error_plans = [p for p in plans if p.action == "error"]
+    skip_plans = [p for p in plans if p.action == "skip"]
 
-        latest = new_snaps[-1]
-        print(f"  Sending {len(new_snaps)} snapshot(s) up to @{latest.name}")
+    for plan in error_plans:
+        print(f"\n{RED}ERROR: {plan.message}{RESET}")
+        if plan.bootstrap_cmd:
+            print(f"  To initialize, run:\n    {plan.bootstrap_cmd}")
+            print(
+                f"  {YELLOW}Note: Before receiving, set desired properties on the "
+                f"destination dataset\n  (e.g. compression, atime, readonly, "
+                f"com.sun:auto-snapshot=false).{RESET}"
+            )
+
+    for plan in skip_plans:
+        if plan.message:
+            print(f"\n{plan.src_dataset}: {plan.message}")
+
+    for plan in up_to_date_plans:
+        print(f"\n{plan.src_dataset}: {GREEN}Up to date{RESET}")
+
+    for plan in send_plans:
+        print(
+            f"\n{plan.src_dataset}: "
+            f"Send {plan.new_snap_count} snapshot(s) up to @{plan.latest.name}"
+        )
+
+    # --- Phase 2: Prompt for rollbacks ---
+    if rollback_plans:
+        print(f"\n{'='*60}")
+        print(f"{YELLOW}The following datasets require rollback before receiving:{RESET}\n")
+        for plan in rollback_plans:
+            print(f"  {plan.dst_dataset}:")
+            print(f"    {GREEN}Rollback to: @{plan.common.name}{RESET}")
+            for victim in plan.rollback_victims:
+                print(f"    {RED}Delete:      @{victim.name}{RESET}")
+            if plan.new_snap_count > 0:
+                print(f"    Then send {plan.new_snap_count} new snapshot(s)")
+            print()
 
         if not dry_run and not no_confirm:
-            if not _confirm(
-                f"  Send {len(new_snaps)} snapshot(s) to {dst_dataset}?"
-            ):
-                print("  Skipped by user.")
-                continue
+            if not _confirm("Proceed with rollbacks?"):
+                print("Aborted by user.")
+                return 1
 
+    # --- Phase 3: Execute ---
+    any_error = bool(error_plans)
+    sent_count = 0
+    rollback_count = 0
+
+    for plan in rollback_plans:
+        print(f"\n{'='*60}")
+        print(f"Rolling back: {plan.dst_dataset} -> @{plan.common.name}")
+        if not dry_run:
+            try:
+                dst_executor.run([
+                    "zfs", "rollback", "-r",
+                    f"{plan.dst_dataset}@{plan.common.name}",
+                ])
+                rollback_count += 1
+            except ExecutorError as e:
+                print(f"  {RED}ERROR: Rollback failed: {e}{RESET}", file=sys.stderr)
+                any_error = True
+                continue
+        else:
+            print(f"  [dry-run] zfs rollback -r {plan.dst_dataset}@{plan.common.name}")
+            rollback_count += 1
+
+        # Send after rollback
+        if plan.latest:
+            print(f"  Sending {plan.new_snap_count} snapshot(s) up to @{plan.latest.name}")
+            try:
+                zfs.send_incremental(
+                    common=plan.common,
+                    latest=plan.latest,
+                    src_executor=src_executor,
+                    dst_executor=dst_executor,
+                    dst_dataset=plan.dst_dataset,
+                    dry_run=dry_run,
+                    verbose=verbose,
+                )
+                sent_count += 1
+            except ExecutorError as e:
+                print(f"  {RED}ERROR: Transfer failed: {e}{RESET}", file=sys.stderr)
+                any_error = True
+                continue
+            if not dry_run:
+                print(f"  {GREEN}Transfer complete.{RESET}")
+
+    for plan in send_plans:
+        print(f"\n{'='*60}")
+        print(f"Sending: {plan.src_dataset} -> {plan.dst_dataset}")
+        print(f"  {plan.new_snap_count} snapshot(s) up to @{plan.latest.name}")
         try:
             zfs.send_incremental(
-                common=common,
-                latest=latest,
+                common=plan.common,
+                latest=plan.latest,
                 src_executor=src_executor,
                 dst_executor=dst_executor,
-                dst_dataset=dst_dataset,
+                dst_dataset=plan.dst_dataset,
                 dry_run=dry_run,
                 verbose=verbose,
             )
+            sent_count += 1
         except ExecutorError as e:
-            print(f"  ERROR: Transfer failed: {e}", file=sys.stderr)
+            print(f"  {RED}ERROR: Transfer failed: {e}{RESET}", file=sys.stderr)
             any_error = True
             continue
-
         if not dry_run:
-            print("  Transfer complete.")
+            print(f"  {GREEN}Transfer complete.{RESET}")
+
+    # --- Phase 4: Summary ---
+    print(f"\n{'='*60}")
+    prefix = "[dry-run] " if dry_run else ""
+    print(f"{prefix}Backup complete.")
+    parts = []
+    if sent_count:
+        parts.append(f"{sent_count} dataset(s) sent")
+    if rollback_count:
+        parts.append(f"{rollback_count} rollback(s)")
+    if len(up_to_date_plans):
+        parts.append(f"{len(up_to_date_plans)} already up to date")
+    if len(error_plans):
+        parts.append(f"{RED}{len(error_plans)} error(s){RESET}")
+    if len(skip_plans):
+        parts.append(f"{len(skip_plans)} skipped")
+    if parts:
+        print(f"  {', '.join(parts)}")
 
     return 1 if any_error else 0

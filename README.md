@@ -34,8 +34,8 @@ destination:
   user: root                   # omit to use current SSH user
   port: 22
 
-datasets:                      # explicit list, OR use: discover: true
-  - ipool/home/bmarohn         # auto-discovers com.sun:auto-snapshot=true datasets
+datasets:                      # explicit list of datasets to back up
+  - ipool/home/user
   - ipool/noble
   - ipool/windows
 
@@ -52,9 +52,17 @@ compaction:                    # retention rules applied to destination only
     keep: 24
 ```
 
+Compaction patterns use regex fullmatch — they must match the entire snapshot name after `@`.
+
+Use `zbm discover job.yaml` to auto-discover datasets with `com.sun:auto-snapshot=true`
+and print a `datasets:` block you can paste into your config.
+
 ## Usage
 
 ```bash
+# Discover datasets for config bootstrapping
+zbm discover job.yaml
+
 # Show sync state (read-only)
 zbm status  job.yaml
 zbm list    job.yaml
@@ -79,6 +87,7 @@ zbm backup  job.yaml --no-confirm
 | `compact` | Prune snapshots on destination per retention rules |
 | `status` | Show how many snapshots each dataset is behind |
 | `list` | Show snapshot counts for source and destination |
+| `discover` | Print `datasets:` YAML block from auto-snapshot property |
 
 ## Safety
 
@@ -86,7 +95,7 @@ zbm backup  job.yaml --no-confirm
 - Never deletes datasets
 - Compaction only touches destination snapshots
 - Prompts before any `zfs destroy` (bypass with `--no-confirm`)
-- If destination needs a rollback, prints the command and skips — never does it automatically
+- If destination needs a rollback, shows which snapshots will be removed (color-coded) and prompts before proceeding
 - If no common snapshot exists, prints bootstrap commands and skips
 
 ## Remote destinations
@@ -94,7 +103,7 @@ zbm backup  job.yaml --no-confirm
 The tool runs only on the source machine. For remote destinations it pipes over SSH:
 
 ```
-zfs send -I @common src@latest | ssh user@host zfs recv dest
+zfs send -I pool/dataset@common pool/dataset@latest | ssh user@host zfs recv dest
 ```
 
 Requires SSH BatchMode (key-based auth via agent, no password prompts).
@@ -104,10 +113,13 @@ Requires SSH BatchMode (key-based auth via agent, no password prompts).
 If a destination dataset doesn't exist yet, `zbm backup` will print the required command:
 
 ```bash
-zfs send -p ipool/home/bmarohn@first-snap | ssh root@server zfs recv xeonpool/BACKUP/ipool/home/bmarohn
+zfs send ipool/home/user@first-snap | ssh root@server zfs recv xeonpool/BACKUP/ipool/home/user
 ```
 
-Run this manually, then subsequent `zbm backup` runs handle incremental updates.
+Before receiving, set desired properties on the destination dataset
+(e.g. compression, atime, readonly, `com.sun:auto-snapshot=false`).
+
+Run the bootstrap command manually, then subsequent `zbm backup` runs handle incremental updates.
 
 ## Development
 

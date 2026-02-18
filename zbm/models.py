@@ -25,7 +25,7 @@ class Snapshot:
 
 @dataclass(frozen=True)
 class Dataset:
-    name: str  # e.g. ipool/home/bmarohn
+    name: str  # e.g. ipool/home/user
 
     @property
     def pool(self) -> str:
@@ -34,7 +34,12 @@ class Dataset:
 
 @dataclass
 class RetentionRule:
-    """Keep the N most recent snapshots matching a pattern."""
+    """Keep the N most recent snapshots matching a pattern.
+
+    Pattern is matched with re.fullmatch against the entire snapshot name,
+    so it must match the complete string. E.g. "zfs-auto-snap_daily-.*"
+    matches "zfs-auto-snap_daily-2026-02-01-1000" but "daily" alone does not.
+    """
     pattern: str
     keep: int
 
@@ -62,7 +67,7 @@ class DestinationConfig:
     def dataset_for(self, src_dataset: str) -> str:
         """Return the destination dataset path for a given source dataset.
 
-        Example: ipool/home/bmarohn -> xeonpool/BACKUP/ipool/home/bmarohn
+        Example: ipool/home/user -> xeonpool/BACKUP/ipool/home/user
         """
         return f"{self.pool}/{self.prefix}/{src_dataset}"
 

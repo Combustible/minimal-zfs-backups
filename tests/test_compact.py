@@ -14,9 +14,9 @@ from zbm.models import (
     Snapshot,
     SourceConfig,
 )
-from tests.conftest import DST_BMAROHN_SNAPS, MockExecutor, _snap_list_output
+from tests.conftest import DST_USER_SNAPS, MockExecutor, _snap_list_output
 
-DST = "xeonpool/BACKUP/ipool/home/bmarohn"
+DST = "xeonpool/BACKUP/ipool/home/user"
 
 
 def _qualified_rule(pattern: str, keep: int, dataset: str = DST) -> RetentionRule:
@@ -28,7 +28,7 @@ def _make_config(compaction):
     return JobConfig(
         source=SourceConfig(pool="ipool"),
         destination=DestinationConfig(pool="xeonpool", prefix="BACKUP"),
-        datasets=["ipool/home/bmarohn"],
+        datasets=["ipool/home/user"],
         compaction=compaction,
     )
 
