@@ -1,6 +1,8 @@
 """Load and validate YAML job configuration files."""
 from __future__ import annotations
 
+import re
+
 import yaml
 
 from zbm.models import (
@@ -44,9 +46,12 @@ def load_job(path: str) -> JobConfig:
     dst_raw = raw.get("destination")
     if not dst_raw or not dst_raw.get("pool"):
         raise ConfigError("destination.pool is required")
+    prefix = dst_raw.get("prefix", "BACKUP")
+    if not prefix:
+        raise ConfigError("destination.prefix must not be empty")
     destination = DestinationConfig(
         pool=dst_raw["pool"],
-        prefix=dst_raw.get("prefix", "BACKUP"),
+        prefix=prefix,
         host=dst_raw.get("host"),
         user=dst_raw.get("user"),
         port=int(dst_raw.get("port", 22)),
@@ -56,14 +61,27 @@ def load_job(path: str) -> JobConfig:
     datasets_raw = raw.get("datasets", [])
     if not datasets_raw:
         raise ConfigError("'datasets' list is required")
-    datasets = [str(d) for d in datasets_raw]
+    datasets = []
+    for d in datasets_raw:
+        name = str(d).strip() if d is not None else ""
+        if not name or name == "None":
+            raise ConfigError(f"Invalid dataset entry: {d!r}")
+        datasets.append(name)
 
     # --- compaction ---
     compaction = []
     for rule in raw.get("compaction", []):
         if "pattern" not in rule or "keep" not in rule:
             raise ConfigError("Each compaction rule needs 'pattern' and 'keep'")
-        compaction.append(RetentionRule(pattern=rule["pattern"], keep=int(rule["keep"])))
+        keep = int(rule["keep"])
+        if keep < 0:
+            raise ConfigError(f"Compaction rule 'keep' must be >= 0, got {keep}")
+        pattern = rule["pattern"]
+        try:
+            re.compile(pattern)
+        except re.error as e:
+            raise ConfigError(f"Invalid regex in compaction pattern {pattern!r}: {e}")
+        compaction.append(RetentionRule(pattern=pattern, keep=keep))
 
     return JobConfig(
         source=source,

@@ -1,24 +1,28 @@
 """Backup job orchestration: sync snapshots from source to destination."""
 from __future__ import annotations
 
+import os
 import shlex
 import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from zbm import zfs
-from zbm.executor import ExecutorError, SSHExecutor
+from zbm.executor import ExecutorError
 from zbm.models import Snapshot
 
 if TYPE_CHECKING:
     from zbm.executor import Executor
     from zbm.models import JobConfig
 
-# ANSI color codes
-GREEN = "\033[32m"
-RED = "\033[31m"
-YELLOW = "\033[33m"
-RESET = "\033[0m"
+# ANSI color codes (respect NO_COLOR convention: https://no-color.org)
+if os.environ.get("NO_COLOR") is not None:
+    GREEN = RED = YELLOW = RESET = ""
+else:
+    GREEN = "\033[32m"
+    RED = "\033[31m"
+    YELLOW = "\033[33m"
+    RESET = "\033[0m"
 
 
 def _confirm(prompt: str) -> bool:
@@ -39,11 +43,10 @@ def _format_bootstrap_command(
 ) -> str:
     """Return the bootstrap command string for a dataset with no common snapshot."""
     recv_cmd = shlex.join(["zfs", "recv", dst_dataset])
-    if isinstance(dst_executor, SSHExecutor):
-        dest = (
-            f"{dst_executor.user}@{dst_executor.host}"
-            if dst_executor.user else dst_executor.host
-        )
+    label = dst_executor.label
+    if label.startswith("ssh://"):
+        # Extract user@host from ssh://user@host:port
+        dest = label[len("ssh://"):].rsplit(":", 1)[0]
         return f"zfs send {src_dataset}@{first_snap} | ssh {dest} {recv_cmd}"
     else:
         return f"zfs send {src_dataset}@{first_snap} | {recv_cmd}"
@@ -54,7 +57,7 @@ class _DatasetPlan:
     """Plan for a single dataset within a backup job."""
     src_dataset: str
     dst_dataset: str
-    # One of: "send", "up_to_date", "rollback_and_send", "error", "skip"
+    # One of: "send", "up_to_date", "rollback_and_send", "rollback_only", "error", "skip"
     action: str = "skip"
     # For send / rollback_and_send
     common: Snapshot | None = None
@@ -141,7 +144,7 @@ def _plan_dataset(
         return plan
 
     if needs_rollback:
-        plan.action = "rollback_and_send" if new_snaps else "rollback_and_send"
+        plan.action = "rollback_and_send" if new_snaps else "rollback_only"
     else:
         plan.action = "send"
 
@@ -183,20 +186,21 @@ def run_backup(
         plans.append(plan)
 
     # --- Print plan summary ---
-    rollback_plans = [p for p in plans if p.action == "rollback_and_send"]
+    rollback_plans = [p for p in plans if p.action in ("rollback_and_send", "rollback_only")]
     send_plans = [p for p in plans if p.action == "send"]
     up_to_date_plans = [p for p in plans if p.action == "up_to_date"]
     error_plans = [p for p in plans if p.action == "error"]
     skip_plans = [p for p in plans if p.action == "skip"]
 
     for plan in error_plans:
-        print(f"\n{RED}ERROR: {plan.message}{RESET}")
+        print(f"\n{RED}ERROR: {plan.message}{RESET}", file=sys.stderr)
         if plan.bootstrap_cmd:
-            print(f"  To initialize, run:\n    {plan.bootstrap_cmd}")
+            print(f"  To initialize, run:\n    {plan.bootstrap_cmd}", file=sys.stderr)
             print(
                 f"  {YELLOW}Note: Before receiving, set desired properties on the "
                 f"destination dataset\n  (e.g. compression, atime, readonly, "
-                f"com.sun:auto-snapshot=false).{RESET}"
+                f"com.sun:auto-snapshot=false).{RESET}",
+                file=sys.stderr,
             )
 
     for plan in skip_plans:

@@ -1,10 +1,11 @@
 """ZFS operations using an Executor for dependency injection."""
 from __future__ import annotations
 
+import shlex
 import subprocess
 from typing import TYPE_CHECKING
 
-from zbm.executor import ExecutorError, SSHExecutor
+from zbm.executor import ExecutorError
 from zbm.models import Dataset, Snapshot
 
 if TYPE_CHECKING:
@@ -99,18 +100,22 @@ def send_incremental(
     recv_cmd = ["zfs", "recv", dst_dataset]
 
     if dry_run or verbose:
-        import shlex
         print(f"  [send] {shlex.join(send_cmd)}")
-        if isinstance(dst_executor, SSHExecutor):
-            print(f"  [recv] ssh ... {shlex.join(recv_cmd)}")
-        else:
-            print(f"  [recv] {shlex.join(recv_cmd)}")
+        print(f"  [recv ({dst_executor.label})] {shlex.join(recv_cmd)}")
 
     if dry_run:
         return
 
-    send_proc = src_executor.popen(send_cmd, stdout=subprocess.PIPE)
-    recv_proc = dst_executor.popen(recv_cmd, stdin=send_proc.stdout)
+    try:
+        send_proc = src_executor.popen(send_cmd, stdout=subprocess.PIPE)
+    except OSError as e:
+        raise ExecutorError(send_cmd, 1, str(e)) from e
+    try:
+        recv_proc = dst_executor.popen(recv_cmd, stdin=send_proc.stdout)
+    except OSError as e:
+        send_proc.kill()
+        send_proc.wait()
+        raise ExecutorError(recv_cmd, 1, str(e)) from e
     # Allow send_proc to receive SIGPIPE if recv_proc dies
     send_proc.stdout.close()
 
@@ -134,7 +139,6 @@ def destroy_snapshot(
     """Destroy a single snapshot."""
     cmd = ["zfs", "destroy", snapshot.full_name]
     if dry_run or verbose:
-        import shlex
         print(f"  [destroy] {shlex.join(cmd)}")
     if dry_run:
         return

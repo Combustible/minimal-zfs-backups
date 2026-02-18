@@ -21,11 +21,16 @@ class MockExecutor:
     Pass verbose=True to print every command that goes through the executor.
     """
 
-    def __init__(self, responses: dict | None = None, verbose: bool = False):
+    def __init__(self, responses: dict | None = None, verbose: bool = False, label: str = "mock"):
         self.responses: dict = responses or {}
         self.verbose = verbose
+        self._label = label
         self.calls: list[list[str]] = []  # record of all commands run
         self.popen_calls: list[tuple[list[str], list[str]]] = []  # (send_cmd, recv_cmd)
+
+    @property
+    def label(self) -> str:
+        return self._label
 
     def _key(self, cmd: list[str]) -> tuple:
         return tuple(cmd)

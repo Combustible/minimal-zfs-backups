@@ -158,7 +158,7 @@ def test_compact_nothing_to_delete(capsys):
     rc = run_compact(config, dst_exec, dry_run=True, no_confirm=True)
     assert rc == 0
     captured = capsys.readouterr()
-    assert "Nothing to delete" in captured.out
+    assert "nothing to delete" in captured.out
 
 
 def test_compact_ignores_unconfigured_datasets(capsys):
@@ -201,6 +201,29 @@ def test_compact_qualified_rules_reject_wrong_dataset():
     rules = [_qualified_rule("zfs-auto-snap_frequent-.*", keep=0, dataset=DST)]
     to_delete = _snapshots_to_delete(snaps_other, rules)
     assert to_delete == [], "Should not delete snapshots from a different dataset"
+
+
+def test_compact_partial_destroy_failure(capsys):
+    """When some destroys fail, report correct count and exit 1."""
+    dst_snaps = [
+        f"{DST}@zfs-auto-snap_frequent-2026-02-17-2200",
+        f"{DST}@zfs-auto-snap_frequent-2026-02-17-2215",
+    ]
+    responses = _dst_responses(dst_snaps)
+    # First destroy succeeds, second fails
+    responses[("zfs", "destroy", f"{DST}@zfs-auto-snap_frequent-2026-02-17-2200")] = ""
+    responses[("zfs", "destroy", f"{DST}@zfs-auto-snap_frequent-2026-02-17-2215")] = (
+        ExecutorError(["zfs", "destroy"], 1, "dataset is busy")
+    )
+    dst_exec = MockExecutor(responses)
+    config = _make_config([
+        RetentionRule(pattern="zfs-auto-snap_frequent-.*", keep=0),
+    ])
+    rc = run_compact(config, dst_exec, dry_run=False, no_confirm=True)
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "Deleted 1 of 2" in captured.out
+    assert "ERROR" in captured.err
 
 
 def test_compact_no_rules(capsys):

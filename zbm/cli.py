@@ -115,8 +115,9 @@ def cmd_list(args) -> int:
     datasets = config.datasets
 
     from zbm.executor import ExecutorError
-    print(f"{'Dataset':<45} {'Src snaps':>10} {'Dst snaps':>10}")
-    print("-" * 67)
+    col_w = max((len(d) for d in datasets), default=7) + 2
+    print(f"{'Dataset':<{col_w}} {'Src snaps':>10} {'Dst snaps':>10}")
+    print("-" * (col_w + 22))
     for src_dataset in datasets:
         dst_dataset = config.destination.dataset_for(src_dataset)
         try:
@@ -129,7 +130,7 @@ def cmd_list(args) -> int:
             dst_count = str(len(dst_snaps))
         except ExecutorError:
             dst_count = "missing"
-        print(f"{src_dataset:<45} {src_count:>10} {dst_count:>10}")
+        print(f"{src_dataset:<{col_w}} {src_count:>10} {dst_count:>10}")
 
     return 0
 

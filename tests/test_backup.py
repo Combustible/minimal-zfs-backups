@@ -79,8 +79,8 @@ def test_backup_no_common_snapshot(capsys):
     rc = run_backup(_make_config(), src_exec, dst_exec, dry_run=True, no_confirm=True)
     assert rc == 1  # partial failure
     captured = capsys.readouterr()
-    assert "No common snapshot" in captured.out
-    assert "zfs send " in captured.out  # bootstrap command shown
+    assert "No common snapshot" in captured.err
+    assert "zfs send " in captured.err  # bootstrap command shown
 
 
 def test_backup_dest_missing(capsys):
@@ -101,7 +101,7 @@ def test_backup_dest_missing(capsys):
     rc = run_backup(_make_config(), src_exec, dst_exec, dry_run=True, no_confirm=True)
     assert rc == 1
     captured = capsys.readouterr()
-    assert "does not exist" in captured.out.lower()
+    assert "does not exist" in captured.err.lower()
 
 
 def test_backup_rollback_needed(capsys):
@@ -183,6 +183,38 @@ def test_backup_common_later_than_dest_only_snaps(capsys):
     captured = capsys.readouterr()
     assert "up to date" in captured.out.lower()
     assert "rollback" not in captured.out.lower()
+
+
+def test_backup_rollback_only_no_new_snaps(capsys):
+    """When dest needs rollback but src has no new snaps beyond common, rollback only."""
+    # Src: snap-a, snap-b (common=snap-b, no new snaps)
+    # Dst: snap-a, snap-b, snap-d (snap-d not on src, needs rollback)
+    src_r = {
+        ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", SRC):
+            "ipool/home/user@snap-a\nipool/home/user@snap-b\n",
+        ("zfs", "list", "-H", "-o", "name", SRC): SRC + "\n",
+    }
+    dst_r = {
+        ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", DST): (
+            "xeonpool/BACKUP/ipool/home/user@snap-a\n"
+            "xeonpool/BACKUP/ipool/home/user@snap-b\n"
+            "xeonpool/BACKUP/ipool/home/user@snap-d\n"
+        ),
+        ("zfs", "list", "-H", "-o", "name", DST): DST + "\n",
+        ("zfs", "rollback", "-r", f"{DST}@snap-b"): "",
+    }
+    src_exec = MockExecutor(src_r)
+    dst_exec = MockExecutor(dst_r)
+    # Live run (not dry-run) to exercise actual rollback
+    rc = run_backup(_make_config(), src_exec, dst_exec, dry_run=False, no_confirm=True)
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "Rollback to: @snap-b" in captured.out
+    assert "@snap-d" in captured.out  # victim shown
+    # Should rollback but NOT send (no new snapshots)
+    assert "zfs send" not in captured.out
+    rollback_cmds = [c for c in dst_exec.calls if "rollback" in str(c)]
+    assert len(rollback_cmds) == 1
 
 
 def test_backup_send_failure(capsys):

@@ -19,6 +19,11 @@ class ExecutorError(Exception):
 
 @runtime_checkable
 class Executor(Protocol):
+    @property
+    def label(self) -> str:
+        """Short label for display (e.g. 'local', 'ssh://host')."""
+        ...
+
     def run(self, cmd: list[str]) -> str:
         """Run a command, return stdout. Raise ExecutorError on failure."""
         ...
@@ -30,6 +35,10 @@ class Executor(Protocol):
 
 class LocalExecutor:
     """Run commands on the local machine."""
+
+    @property
+    def label(self) -> str:
+        return "local"
 
     def run(self, cmd: list[str]) -> str:
         result = subprocess.run(
@@ -52,6 +61,11 @@ class SSHExecutor:
         self.host = host
         self.user = user
         self.port = port
+
+    @property
+    def label(self) -> str:
+        dest = f"{self.user}@{self.host}" if self.user else self.host
+        return f"ssh://{dest}:{self.port}"
 
     def _ssh_prefix(self) -> list[str]:
         dest = f"{self.user}@{self.host}" if self.user else self.host
