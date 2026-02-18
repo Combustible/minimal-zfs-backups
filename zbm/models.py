@@ -72,5 +72,4 @@ class JobConfig:
     source: SourceConfig
     destination: DestinationConfig
     datasets: list[str]          # explicit dataset names
-    discover: bool = False        # discover via com.sun:auto-snapshot
     compaction: list[RetentionRule] = field(default_factory=list)

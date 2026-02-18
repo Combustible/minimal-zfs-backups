@@ -30,7 +30,7 @@ def _print_initial_send_commands(
     dst_dataset: str,
 ) -> None:
     """Print commands to bootstrap a dataset that has no common snapshot."""
-    recv_cmd = shlex.join(["zfs", "recv", "-s", dst_dataset])
+    recv_cmd = shlex.join(["zfs", "recv", dst_dataset])
     if hasattr(dst_executor, 'host'):
         # SSHExecutor
         dest = (
@@ -67,14 +67,7 @@ def run_backup(
     - If dest HEAD is ahead of common: warn, print rollback command, skip
     - Send all snapshots from common to latest (dry-run or live)
     """
-    if config.discover:
-        datasets = [
-            ds.name for ds in zfs.discover_datasets(config.source.pool, src_executor)
-        ]
-        if verbose:
-            print(f"Discovered datasets with auto-snapshot: {datasets}")
-    else:
-        datasets = config.datasets
+    datasets = config.datasets
 
     if not datasets:
         print("No datasets to back up.", file=sys.stderr)
@@ -174,7 +167,6 @@ def run_backup(
 
         try:
             zfs.send_incremental(
-                src_dataset=src_dataset,
                 common=common,
                 latest=latest,
                 src_executor=src_executor,

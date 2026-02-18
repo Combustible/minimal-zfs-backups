@@ -78,7 +78,6 @@ def find_common_snapshot(
 
 
 def send_incremental(
-    src_dataset: str,
     common: Snapshot,
     latest: Snapshot,
     src_executor: "Executor",
@@ -90,12 +89,12 @@ def send_incremental(
     """
     Send all snapshots from common (exclusive) to latest (inclusive) to dst_dataset.
 
-    Uses: zfs send -I @common src_dataset@latest | [ssh] zfs recv dst_dataset
+    Uses: zfs send -I pool/dataset@common pool/dataset@latest | [ssh] zfs recv dst_dataset
     """
     send_cmd = [
         "zfs", "send", "-I",
-        f"@{common.name}",
-        f"{src_dataset}@{latest.name}",
+        common.full_name,
+        latest.full_name,
     ]
     recv_cmd = ["zfs", "recv", dst_dataset]
 

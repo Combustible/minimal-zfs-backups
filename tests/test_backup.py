@@ -130,6 +130,59 @@ def test_backup_rollback_needed(capsys):
     assert "zfs rollback" in captured.out
 
 
+def test_backup_no_rollback_when_common_is_dest_head(capsys):
+    """When dest has extra snaps before common but common IS dest HEAD, no rollback."""
+    # Src: snap-a, snap-b, snap-c
+    # Dst: snap-a, snap-d, snap-b  (snap-d not on src, but common=b is HEAD)
+    src_r = {
+        ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", SRC):
+            "ipool/home/bmarohn@snap-a\nipool/home/bmarohn@snap-b\nipool/home/bmarohn@snap-c\n",
+        ("zfs", "list", "-H", "-o", "name", SRC): SRC + "\n",
+    }
+    dst_r = {
+        ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", DST): (
+            "xeonpool/BACKUP/ipool/home/bmarohn@snap-a\n"
+            "xeonpool/BACKUP/ipool/home/bmarohn@snap-d\n"
+            "xeonpool/BACKUP/ipool/home/bmarohn@snap-b\n"
+        ),
+        ("zfs", "list", "-H", "-o", "name", DST): DST + "\n",
+    }
+    src_exec = MockExecutor(src_r)
+    dst_exec = MockExecutor(dst_r)
+    rc = run_backup(_make_config(), src_exec, dst_exec, dry_run=True, verbose=True, no_confirm=True)
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "rollback" not in captured.out.lower()
+    assert "1 snapshot(s)" in captured.out  # snap-c to send
+
+
+def test_backup_common_later_than_dest_only_snaps(capsys):
+    """When dest has extra snaps but common is later, no rollback needed."""
+    # Src: snap-a, snap-b, snap-c
+    # Dst: snap-a, snap-d, snap-b, snap-c  (common=c is HEAD, up to date)
+    src_r = {
+        ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", SRC):
+            "ipool/home/bmarohn@snap-a\nipool/home/bmarohn@snap-b\nipool/home/bmarohn@snap-c\n",
+        ("zfs", "list", "-H", "-o", "name", SRC): SRC + "\n",
+    }
+    dst_r = {
+        ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", DST): (
+            "xeonpool/BACKUP/ipool/home/bmarohn@snap-a\n"
+            "xeonpool/BACKUP/ipool/home/bmarohn@snap-d\n"
+            "xeonpool/BACKUP/ipool/home/bmarohn@snap-b\n"
+            "xeonpool/BACKUP/ipool/home/bmarohn@snap-c\n"
+        ),
+        ("zfs", "list", "-H", "-o", "name", DST): DST + "\n",
+    }
+    src_exec = MockExecutor(src_r)
+    dst_exec = MockExecutor(dst_r)
+    rc = run_backup(_make_config(), src_exec, dst_exec, dry_run=True, no_confirm=True)
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "up to date" in captured.out.lower()
+    assert "rollback" not in captured.out.lower()
+
+
 def test_backup_send_failure(capsys):
     """When send/recv fails, report error and continue to next dataset."""
     from unittest.mock import MagicMock, patch

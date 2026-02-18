@@ -96,7 +96,6 @@ def test_send_incremental_dry_run(capsys):
     latest = Snapshot.parse("ipool/home/bmarohn@zfs-auto-snap_frequent-2026-02-17-2215")
 
     zfs.send_incremental(
-        src_dataset="ipool/home/bmarohn",
         common=common,
         latest=latest,
         src_executor=src_exec,

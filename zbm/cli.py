@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from zbm.config import ConfigError, load_job
+from zbm.config import ConfigError, load_job, load_source_pool
 from zbm.executor import LocalExecutor, SSHExecutor
 
 
@@ -69,13 +69,7 @@ def cmd_status(args) -> int:
         return 1
 
     src_exec, dst_exec = _make_executors(config)
-
-    if config.discover:
-        datasets = [
-            ds.name for ds in zfs.discover_datasets(config.source.pool, src_exec)
-        ]
-    else:
-        datasets = config.datasets
+    datasets = config.datasets
 
     for src_dataset in datasets:
         dst_dataset = config.destination.dataset_for(src_dataset)
@@ -105,13 +99,7 @@ def cmd_list(args) -> int:
         return 1
 
     src_exec, dst_exec = _make_executors(config)
-
-    if config.discover:
-        datasets = [
-            ds.name for ds in zfs.discover_datasets(config.source.pool, src_exec)
-        ]
-    else:
-        datasets = config.datasets
+    datasets = config.datasets
 
     print(f"{'Dataset':<45} {'Src snaps':>10} {'Dst snaps':>10}")
     print("-" * 67)
@@ -124,6 +112,30 @@ def cmd_list(args) -> int:
         except Exception:
             dst_count = "missing"
         print(f"{src_dataset:<45} {len(src_snaps):>10} {dst_count:>10}")
+
+    return 0
+
+
+def cmd_discover(args) -> int:
+    """Discover datasets with auto-snapshot enabled and print YAML datasets block."""
+    from zbm import zfs
+    try:
+        pool = load_source_pool(args.config)
+    except (ConfigError, FileNotFoundError) as e:
+        print(f"Config error: {e}", file=sys.stderr)
+        return 1
+
+    src_exec = LocalExecutor()
+    datasets = zfs.discover_datasets(pool, src_exec)
+
+    if not datasets:
+        print(f"No datasets with com.sun:auto-snapshot=true found in pool '{pool}'.",
+              file=sys.stderr)
+        return 1
+
+    print("datasets:")
+    for ds in datasets:
+        print(f"  - {ds.name}")
 
     return 0
 
@@ -160,6 +172,11 @@ def main(argv=None) -> None:
     p_list = sub.add_parser("list", help="List datasets and snapshot counts")
     p_list.add_argument("config", help="Path to job YAML config file")
     p_list.set_defaults(func=cmd_list)
+
+    p_discover = sub.add_parser("discover",
+        help="Discover datasets with auto-snapshot and print YAML datasets block")
+    p_discover.add_argument("config", help="Path to job YAML config file")
+    p_discover.set_defaults(func=cmd_discover)
 
     args = parser.parse_args(argv)
     sys.exit(args.func(args))

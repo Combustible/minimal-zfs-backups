@@ -4,6 +4,8 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
+import re
+
 from zbm import zfs
 from zbm.executor import ExecutorError
 from zbm.models import RetentionRule, Snapshot
@@ -25,7 +27,7 @@ def _snapshots_to_delete(
     seen: set[str] = set()
 
     for rule in rules:
-        matching = [s for s in snapshots if rule.matches(s.name)]
+        matching = [s for s in snapshots if rule.matches(s.full_name)]
         # matching is oldest→newest (same order as input)
         if rule.keep == 0:
             candidates = matching
@@ -58,21 +60,9 @@ def run_compact(
         print("No compaction rules defined in config. Nothing to do.")
         return 0
 
-    if config.discover:
-        from zbm.executor import LocalExecutor
-        # For discover, we need source executor — caller should pass it separately.
-        # Compaction only needs destination, so just use the dest datasets.
-        # We derive dataset names from destination pool listing.
-        all_ds = zfs.list_datasets(config.destination.pool, dst_executor)
-        prefix = f"{config.destination.pool}/{config.destination.prefix}/"
-        datasets = [
-            ds.name for ds in all_ds
-            if ds.name.startswith(prefix) and "/" in ds.name[len(prefix):]
-        ]
-    else:
-        datasets = [
-            config.destination.dataset_for(ds) for ds in config.datasets
-        ]
+    datasets = [
+        config.destination.dataset_for(ds) for ds in config.datasets
+    ]
 
     any_error = False
 
@@ -88,7 +78,15 @@ def run_compact(
         if verbose:
             print(f"  Total snapshots: {len(snaps)}")
 
-        to_delete = _snapshots_to_delete(snaps, config.compaction)
+        # Build qualified rules that match full snapshot names (dataset@pattern)
+        qualified_rules = [
+            RetentionRule(
+                pattern=re.escape(dst_dataset) + "@" + rule.pattern,
+                keep=rule.keep,
+            )
+            for rule in config.compaction
+        ]
+        to_delete = _snapshots_to_delete(snaps, qualified_rules)
 
         if not to_delete:
             print("  Nothing to delete.")

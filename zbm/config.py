@@ -15,6 +15,18 @@ class ConfigError(Exception):
     pass
 
 
+def load_source_pool(path: str) -> str:
+    """Load only the source pool name from a config file (for discover)."""
+    with open(path) as f:
+        raw = yaml.safe_load(f)
+    if not isinstance(raw, dict):
+        raise ConfigError(f"Config must be a YAML mapping: {path}")
+    src_raw = raw.get("source")
+    if not src_raw or not src_raw.get("pool"):
+        raise ConfigError("source.pool is required")
+    return src_raw["pool"]
+
+
 def load_job(path: str) -> JobConfig:
     with open(path) as f:
         raw = yaml.safe_load(f)
@@ -42,9 +54,8 @@ def load_job(path: str) -> JobConfig:
 
     # --- datasets ---
     datasets_raw = raw.get("datasets", [])
-    discover = bool(raw.get("discover", False))
-    if not datasets_raw and not discover:
-        raise ConfigError("Either 'datasets' list or 'discover: true' is required")
+    if not datasets_raw:
+        raise ConfigError("'datasets' list is required")
     datasets = [str(d) for d in datasets_raw]
 
     # --- compaction ---
@@ -58,6 +69,5 @@ def load_job(path: str) -> JobConfig:
         source=source,
         destination=destination,
         datasets=datasets,
-        discover=discover,
         compaction=compaction,
     )
