@@ -19,7 +19,7 @@ class ConfigError(Exception):
 
 def load_source_pool(path: str) -> str:
     """Load only the source pool name from a config file (for discover)."""
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
     if not isinstance(raw, dict):
         raise ConfigError(f"Config must be a YAML mapping: {path}")
@@ -30,7 +30,7 @@ def load_source_pool(path: str) -> str:
 
 
 def load_job(path: str) -> JobConfig:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
 
     if not isinstance(raw, dict):
@@ -80,7 +80,7 @@ def load_job(path: str) -> JobConfig:
         try:
             re.compile(pattern)
         except re.error as e:
-            raise ConfigError(f"Invalid regex in compaction pattern {pattern!r}: {e}")
+            raise ConfigError(f"Invalid regex in compaction pattern {pattern!r}: {e}") from e
         compaction.append(RetentionRule(pattern=pattern, keep=keep))
 
     return JobConfig(

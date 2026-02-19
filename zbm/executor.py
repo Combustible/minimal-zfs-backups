@@ -22,15 +22,15 @@ class Executor(Protocol):
     @property
     def label(self) -> str:
         """Short label for display (e.g. 'local', 'ssh://host')."""
-        ...
+        raise NotImplementedError
 
     def run(self, cmd: list[str]) -> str:
         """Run a command, return stdout. Raise ExecutorError on failure."""
-        ...
+        raise NotImplementedError
 
     def popen(self, cmd: list[str], **kwargs) -> subprocess.Popen:
         """Launch a command as a Popen object for piping."""
-        ...
+        raise NotImplementedError
 
 
 class LocalExecutor:
@@ -45,6 +45,7 @@ class LocalExecutor:
             cmd,
             capture_output=True,
             text=True,
+            check=False,
         )
         if result.returncode != 0:
             raise ExecutorError(cmd, result.returncode, result.stderr)
@@ -83,6 +84,7 @@ class SSHExecutor:
             full_cmd,
             capture_output=True,
             text=True,
+            check=False,
         )
         if result.returncode != 0:
             raise ExecutorError(full_cmd, result.returncode, result.stderr)
