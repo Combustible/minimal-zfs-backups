@@ -1,8 +1,6 @@
 """Tests for zbm.backup module."""
 from __future__ import annotations
 
-import pytest
-
 from zbm.backup import run_backup
 from zbm.executor import ExecutorError
 from zbm.models import DestinationConfig, JobConfig, SourceConfig

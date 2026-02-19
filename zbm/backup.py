@@ -48,8 +48,8 @@ def _format_bootstrap_command(
         # Extract user@host from ssh://user@host:port
         dest = label[len("ssh://"):].rsplit(":", 1)[0]
         return f"zfs send {src_dataset}@{first_snap} | ssh {dest} {recv_cmd}"
-    else:
-        return f"zfs send {src_dataset}@{first_snap} | {recv_cmd}"
+
+    return f"zfs send {src_dataset}@{first_snap} | {recv_cmd}"
 
 
 @dataclass

@@ -5,82 +5,29 @@ ignore-patterns=^\.venv/|^\.pytest_cache/|^build/|^dist/
 jobs=0
 persistent=yes
 
-# Fail fast on truly bad issues; keep others as guidance.
-fail-under=8.5
-
-# Default is fine; explicitly record we're on 3.10+.
 py-version=3.10
 
-# Load common optional plugins if available (safe if missing).
-load-plugins=
-
 [MESSAGES CONTROL]
-# This project intentionally has some "orchestration" functions and dataclasses;
-# we treat many of those as refactor candidates, not hard failures.
 disable=
-    # Docstrings: prefer module-level docs + clear names; tests are exempted below too.
     missing-module-docstring,
     missing-class-docstring,
     missing-function-docstring,
-
-    # CLI and orchestration often import lazily to reduce import cost / side effects.
     import-outside-toplevel,
-
-    # Complexity: keep as warnings for now; tackle incrementally.
     too-many-arguments,
     too-many-positional-arguments,
     too-many-locals,
     too-many-branches,
     too-many-statements,
     too-many-instance-attributes,
-
-    # Style nits not worth churn initially.
     line-too-long,
-    no-else-return,
-
-    # Test style nits / readability preferences.
-    invalid-name,
-    use-implicit-booleaness-not-comparison,
-
-    # Pytest fixtures sometimes intentionally shadow / re-import.
-    redefined-outer-name,
-    reimported,
-
-    # Some unused imports in tests occur from parametrization / fixture presence checks.
-    unused-import,
-    unused-argument,
-    unused-variable,
 
 [REPORTS]
 score=yes
 output-format=text
 reports=no
 
-[FORMAT]
-max-line-length=100
-indent-string='    '
-
-[DESIGN]
-# Keep these set to sensible defaults for future tightening (even if disabled above).
-max-args=5
-max-positional-arguments=5
-max-locals=15
-max-branches=12
-max-statements=50
-max-attributes=7
-
-[TYPECHECK]
-# Allow dynamic attrs typical in pytest/mocks if they arise.
-generated-members=
-ignored-modules=
-ignored-classes=
-ignore-none=yes
-
 [EXCEPTIONS]
 overgeneral-exceptions=builtins.Exception
-
-[LOGGING]
-logging-format-style=old
 
 [SIMILARITIES]
 min-similarity-lines=4
@@ -89,14 +36,5 @@ ignore-docstrings=yes
 ignore-imports=yes
 
 [IMPORTS]
-# We allow local imports in CLI/orchestration; see disable import-outside-toplevel.
 known-standard-library=
 known-third-party=pytest,yaml
-# Don't force import order churn; if you add isort later, let it handle ordering.
-
-[STRING]
-# Encourage explicit encoding when opening files.
-check-quote-consistency=no
-
-[PATHS]
-# No special init-hook; keep linting reproducible.
