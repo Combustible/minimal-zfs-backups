@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-import pytest
+
 
 from zbm.compact import _snapshots_to_delete, run_compact
 from zbm.executor import ExecutorError
@@ -14,7 +14,7 @@ from zbm.models import (
     Snapshot,
     SourceConfig,
 )
-from tests.conftest import DST_USER_SNAPS, MockExecutor, _snap_list_output
+from tests.conftest import MockExecutor, _snap_list_output
 
 DST = "xeonpool/BACKUP/ipool/home/user"
 
@@ -79,7 +79,7 @@ def test_keep_more_than_count_deletes_nothing():
     ])
     rules = [_qualified_rule("zfs-auto-snap_monthly-.*", keep=24)]
     to_delete = _snapshots_to_delete(snaps, rules)
-    assert to_delete == []
+    assert not to_delete
 
 
 def test_multiple_rules_no_duplicates():
@@ -127,12 +127,11 @@ def test_compact_dry_run_no_deletes(capsys):
     assert "frequent" in captured.out
 
 
-def test_compact_live_deletes(capsys):
+def test_compact_live_deletes():
     dst_snaps = [
         f"{DST}@zfs-auto-snap_frequent-2026-02-17-2200",
         f"{DST}@zfs-auto-snap_frequent-2026-02-17-2215",
     ]
-    destroy_calls = []
     responses = _dst_responses(dst_snaps)
     # Add destroy responses
     for snap in dst_snaps:
@@ -161,23 +160,27 @@ def test_compact_nothing_to_delete(capsys):
     assert "nothing to delete" in captured.out
 
 
-def test_compact_ignores_unconfigured_datasets(capsys):
+def test_compact_ignores_unconfigured_datasets():
     """Snapshots on datasets not in config.datasets must never be compacted."""
-    OTHER_DST = "xeonpool/BACKUP/ipool/other"
+    other_dst = "xeonpool/BACKUP/ipool/other"
     # Set up two datasets on destination — only one is configured
     configured_snaps = [
         f"{DST}@zfs-auto-snap_frequent-2026-02-17-2200",
     ]
     other_snaps = [
-        f"{OTHER_DST}@zfs-auto-snap_frequent-2026-02-17-2200",
-        f"{OTHER_DST}@zfs-auto-snap_frequent-2026-02-17-2215",
+        f"{other_dst}@zfs-auto-snap_frequent-2026-02-17-2200",
+        f"{other_dst}@zfs-auto-snap_frequent-2026-02-17-2215",
     ]
+
+    # Make the destination's recursive snapshot listing include "other" dataset too.
+    # run_compact must ignore those since it only compacts config.datasets (DST).
+    all_snaps = configured_snaps + other_snaps
     responses = {
         ("zfs", "list", "-H", "-o", "name", DST): DST + "\n",
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", DST):
-            _snap_list_output(configured_snaps),
+            _snap_list_output(all_snaps),
         ("zfs", "destroy", f"{DST}@zfs-auto-snap_frequent-2026-02-17-2200"): "",
-        # The other dataset should never be queried
+        # If we try to destroy other_dst snapshots, MockExecutor will KeyError the missing response.
     }
     dst_exec = MockExecutor(responses)
     config = _make_config([
@@ -185,10 +188,11 @@ def test_compact_ignores_unconfigured_datasets(capsys):
     ])
     rc = run_compact(config, dst_exec, dry_run=False, no_confirm=True)
     assert rc == 0
-    # Verify no commands were issued for the other dataset
-    for cmd in dst_exec.calls:
-        assert OTHER_DST not in " ".join(cmd), \
-            f"Unexpected command touching unconfigured dataset: {cmd}"
+
+    destroy_cmds = [c for c in dst_exec.calls if c[0:2] == ["zfs", "destroy"]]
+    assert destroy_cmds == [
+        ["zfs", "destroy", f"{DST}@zfs-auto-snap_frequent-2026-02-17-2200"],
+    ]
 
 
 def test_compact_qualified_rules_reject_wrong_dataset():
@@ -200,7 +204,7 @@ def test_compact_qualified_rules_reject_wrong_dataset():
     # Rules qualified for DST should NOT match snapshots on a different dataset
     rules = [_qualified_rule("zfs-auto-snap_frequent-.*", keep=0, dataset=DST)]
     to_delete = _snapshots_to_delete(snaps_other, rules)
-    assert to_delete == [], "Should not delete snapshots from a different dataset"
+    assert not to_delete, "Should not delete snapshots from a different dataset"
 
 
 def test_compact_partial_destroy_failure(capsys):

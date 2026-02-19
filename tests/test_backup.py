@@ -4,13 +4,7 @@ from __future__ import annotations
 from zbm.backup import run_backup
 from zbm.executor import ExecutorError
 from zbm.models import DestinationConfig, JobConfig, SourceConfig
-from tests.conftest import (
-    DST_USER_SNAPS,
-    MockExecutor,
-    SRC_USER_SNAPS,
-    _snap_list_output,
-    make_standard_responses,
-)
+from tests.conftest import MockExecutor, make_standard_responses
 
 SRC = "ipool/home/user"
 DST = "xeonpool/BACKUP/ipool/home/user"
@@ -217,16 +211,17 @@ def test_backup_rollback_only_no_new_snaps(capsys):
 
 def test_backup_send_failure(capsys):
     """When send/recv fails, report error and continue to next dataset."""
-    from unittest.mock import MagicMock, patch
-    import io
+    from unittest.mock import patch
 
     src_r, dst_r = make_standard_responses()
     src_exec = MockExecutor(src_r)
     dst_exec = MockExecutor(dst_r)
 
     # Patch send_incremental to raise
-    with patch("zbm.backup.zfs.send_incremental",
-               side_effect=ExecutorError(["zfs", "send"], 1, "pipe broken")):
+    with patch(
+        "zbm.backup.zfs.send_incremental",
+        side_effect=ExecutorError(["zfs", "send"], 1, "pipe broken"),
+    ):
         config = _make_config()
         rc = run_backup(config, src_exec, dst_exec, dry_run=False, no_confirm=True)
 

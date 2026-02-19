@@ -1,17 +1,9 @@
 """Tests for zbm.zfs module."""
 from __future__ import annotations
 
-import pytest
-
 from zbm import zfs
-from zbm.executor import ExecutorError
 from zbm.models import Snapshot
-from tests.conftest import (
-    DST_USER_SNAPS,
-    MockExecutor,
-    SRC_USER_SNAPS,
-    make_standard_responses,
-)
+from tests.conftest import DST_USER_SNAPS, MockExecutor, SRC_USER_SNAPS, make_standard_responses
 
 
 def test_list_snapshots_basic():
@@ -79,7 +71,8 @@ def test_dataset_exists_true():
 
 
 def test_dataset_exists_false():
-    from zbm.executor import ExecutorError
+    from zbm.executor import ExecutorError  # pylint: disable=import-outside-toplevel
+
     exec_ = MockExecutor({
         ("zfs", "list", "-H", "-o", "name", "ipool/nonexistent"):
             ExecutorError(["zfs", "list"], 1, "dataset does not exist"),
@@ -89,8 +82,8 @@ def test_dataset_exists_false():
 
 def test_send_incremental_dry_run(capsys):
     src_responses, _ = make_standard_responses()
-    src_exec = MockExecutor(src_responses, verbose=False)
-    dst_exec = MockExecutor({}, verbose=False)
+    src_exec = MockExecutor(src_responses, is_verbose=False)
+    dst_exec = MockExecutor({}, is_verbose=False)
 
     common = Snapshot.parse("ipool/home/user@backup10t-push-2025-11-11")
     latest = Snapshot.parse("ipool/home/user@zfs-auto-snap_frequent-2026-02-17-2215")
@@ -119,4 +112,4 @@ def test_destroy_snapshot_dry_run(capsys):
     captured = capsys.readouterr()
     assert "zfs destroy" in captured.out
     # No actual run call
-    assert exec_.calls == []
+    assert not exec_.calls

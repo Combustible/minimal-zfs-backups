@@ -3,12 +3,9 @@ from __future__ import annotations
 
 import io
 import subprocess
-from typing import Callable
 from unittest.mock import MagicMock
 
 import pytest
-
-from zbm.models import Snapshot
 
 
 class MockExecutor:
@@ -21,9 +18,9 @@ class MockExecutor:
     Pass verbose=True to print every command that goes through the executor.
     """
 
-    def __init__(self, responses: dict | None = None, verbose: bool = False, label: str = "mock"):
+    def __init__(self, responses: dict | None = None, is_verbose: bool = False, label: str = "mock"):
         self.responses: dict = responses or {}
-        self.verbose = verbose
+        self.verbose = is_verbose
         self._label = label
         self.calls: list[list[str]] = []  # record of all commands run
         self.popen_calls: list[tuple[list[str], list[str]]] = []  # (send_cmd, recv_cmd)
@@ -48,7 +45,7 @@ class MockExecutor:
             raise result
         return result
 
-    def popen(self, cmd: list[str], **kwargs) -> subprocess.Popen:
+    def popen(self, cmd: list[str], **_kwargs) -> subprocess.Popen:
         """
         For send/recv pipe tests: record the call and return mock Popen objects
         that succeed immediately.
