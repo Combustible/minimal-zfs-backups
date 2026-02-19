@@ -25,8 +25,7 @@ zbm/
 tests/
   conftest.py  — MockExecutor, realistic snapshot fixtures from real pool data
   test_zfs.py, test_backup.py, test_compact.py
-examples/
-  desktop-to-server.yaml
+desktop-to-server.yaml.example — An example configuration file
 ```
 
 ## Key Design Decisions

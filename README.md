@@ -21,7 +21,7 @@ This installs the `zbm` command into the active environment.
 
 ## Configuration
 
-Each backup job is a YAML file. See `examples/desktop-to-server.yaml` for a full example.
+Each backup job is a YAML file. See `desktop-to-server.yaml.example` for a full example.
 
 ```yaml
 source:
