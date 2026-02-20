@@ -229,7 +229,7 @@ def run_backup(
             print()
 
         if not no_confirm:
-            if not _confirm("Proceed with rollbacks?"):
+            if not _confirm(("[dry-run] " if dry_run else "") + "Proceed with rollbacks?"):
                 print("Aborted by user.")
                 return 1
 
@@ -299,8 +299,7 @@ def run_backup(
 
     # --- Phase 4: Summary ---
     print(f"\n{'='*60}")
-    prefix = "[dry-run] " if dry_run else ""
-    print(f"{prefix}Backup complete.")
+    print(("[dry-run] " if dry_run else "") + "Backup complete.")
     parts = []
     if sent_count:
         parts.append(f"{sent_count} dataset(s) sent")

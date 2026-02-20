@@ -13,7 +13,9 @@ Replaces a legacy bash script. Uses `zfs send -I | zfs recv` for efficient incre
 ## Install
 
 ```bash
+# Optionally, create a virtual environment
 python -m venv .venv && source .venv/bin/activate
+# Install to virtual environment, or system environment if not using virtualenv
 pip install -e .
 ```
 
