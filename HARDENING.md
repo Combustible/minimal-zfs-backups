@@ -51,18 +51,21 @@ dataset subtree.
 
 On the sender, this should be at least:
 ```
-sudo zfs allow -u zbm send sourcepool
+sudo zfs allow -u zbm send,hold sourcepool
 ```
 
 On the receiver, this should be at least:
 ```
-sudo zfs allow -u zbm receive,rollback,destroy destpool/BACKUP
+sudo zfs allow -u zbm mount,hold,create,receive,rollback,destroy destpool/BACKUP
 ```
 
 Replace `destpool/BACKUP` with your actual `pool/prefix` combination (matching
 `pool` + `prefix` in your job YAML). Permissions are inherited by all child
 datasets, so this single command covers every dataset `zbm` will ever create
 under that prefix.
+
+Note that `destroy` requires the `mount` permission, `send` and `receive`
+require the `hold` permission, and `receive` requires the `create` permission.
 
 Verify at any time:
 

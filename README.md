@@ -14,9 +14,9 @@ Replaces a legacy bash script. Uses `zfs send -I | zfs recv` for efficient incre
 
 ```bash
 # Optionally, create a virtual environment
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 # Install to virtual environment, or system environment if not using virtualenv
-pip install -e .
+pip3 install -e .
 ```
 
 This installs the `zbm` command into the active environment.
