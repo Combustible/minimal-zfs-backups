@@ -35,12 +35,12 @@ at the kernel level — no elevated shell access required.
 
 On the destination server and/or the source machine:
 ```
-useradd -m -s /usr/sbin/nologin zbm
+useradd -m -s /usr/bin/rbash zbm
 ```
 
-The `-s /usr/sbin/nologin` (or `/sbin/nologin` on some systems) prevents
-interactive logins. SSH still works for non-interactive commands. `-m` creates a
-home directory for the user.
+`rbash` is a somewhat more restricted shell that limits the user's ability to
+change directories or execute arbitrary commands. This provides possibly some
+additional security vs `bash`. `-m` creates a home directory for the user.
 
 ---
 
