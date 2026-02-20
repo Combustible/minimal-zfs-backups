@@ -108,6 +108,10 @@ zfs send -I pool/dataset@common pool/dataset@latest | ssh user@host zfs recv des
 
 Requires SSH BatchMode (key-based auth via agent, no password prompts).
 
+For automated/unattended use, see **[HARDENING.md](HARDENING.md)** for how to
+set up a dedicated non-root user with scoped ZFS permissions and a restricted
+SSH key — no root access or `sudo` required.
+
 ## Bootstrap (first sync)
 
 If a destination dataset doesn't exist yet, `zbm backup` will print the required command:
