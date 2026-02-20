@@ -54,7 +54,7 @@ pools to find common point.
 
 ## Absolute Safety Rules (never violate)
 
-- Never `zfs recv -F` (no force-overwrite)
+- Never `zfs recv -F` in commands executed by the program (no force-overwrite). They are allowed (and required) in bootstrap commands printed for the user to run.
 - Never delete datasets (`zfs destroy pool/dataset`)
 - Never touch source snapshots
 - If rollback needed: show color-coded victim list, prompt user, run `zfs rollback -r dest@common`

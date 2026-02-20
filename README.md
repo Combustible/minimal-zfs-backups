@@ -91,7 +91,7 @@ zbm backup  job.yaml --no-confirm
 
 ## Safety
 
-- Never runs `zfs recv -F` (no force-overwrite)
+- Never runs dangerous operations including `zfs recv -F`, prompts you to run those commands if they are needed.
 - Never deletes datasets
 - Compaction only touches destination snapshots
 - Prompts before any `zfs destroy` (bypass with `--no-confirm`)

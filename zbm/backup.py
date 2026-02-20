@@ -42,7 +42,7 @@ def _format_bootstrap_command(
     dst_dataset: str,
 ) -> str:
     """Return the bootstrap command string for a dataset with no common snapshot."""
-    recv_cmd = shlex.join(["zfs", "recv", dst_dataset])
+    recv_cmd = shlex.join(["zfs", "recv", "-F", dst_dataset])
     label = dst_executor.label
     if label.startswith("ssh://"):
         # Extract user@host from ssh://user@host:port
@@ -197,9 +197,8 @@ def run_backup(
         if plan.bootstrap_cmd:
             print(f"  To initialize, run:\n    {plan.bootstrap_cmd}", file=sys.stderr)
             print(
-                f"  {YELLOW}Note: Before receiving, set desired properties on the "
-                f"destination dataset\n  (e.g. compression, atime, readonly, "
-                f"com.sun:auto-snapshot=false).{RESET}",
+                f"  {YELLOW}Consider creating the destination dataset first and then setting desired properties before receiving.\n"
+                f"  (e.g. compression, atime, readonly, com.sun:auto-snapshot=false).{RESET}",
                 file=sys.stderr,
             )
 
@@ -229,7 +228,7 @@ def run_backup(
                 print(f"    Then send {plan.new_snap_count} new snapshot(s)")
             print()
 
-        if not dry_run and not no_confirm:
+        if not no_confirm:
             if not _confirm("Proceed with rollbacks?"):
                 print("Aborted by user.")
                 return 1
@@ -275,8 +274,7 @@ def run_backup(
                 print(f"  {RED}ERROR: Transfer failed: {e}{RESET}", file=sys.stderr)
                 any_error = True
                 continue
-            if not dry_run:
-                print(f"  {GREEN}Transfer complete.{RESET}")
+            print(f"  {GREEN}Transfer complete.{RESET}")
 
     for plan in send_plans:
         print(f"\n{'='*60}")
@@ -297,8 +295,7 @@ def run_backup(
             print(f"  {RED}ERROR: Transfer failed: {e}{RESET}", file=sys.stderr)
             any_error = True
             continue
-        if not dry_run:
-            print(f"  {GREEN}Transfer complete.{RESET}")
+        print(f"  {GREEN}Transfer complete.{RESET}")
 
     # --- Phase 4: Summary ---
     print(f"\n{'='*60}")

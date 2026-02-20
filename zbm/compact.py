@@ -108,13 +108,10 @@ def run_compact(
         for snap in to_delete:
             print(f"    {snap.full_name}")
 
-    if dry_run:
-        return 0
-
     if not no_confirm:
         try:
             answer = input(
-                f"\nDelete {total} snapshot(s)? [y/N] "
+                "\n" + ("[dry run] " if dry_run else "") + f"Delete {total} snapshot(s)? [y/N] "
             ).strip().lower()
         except (EOFError, KeyboardInterrupt):
             print("\nAborted by user.")
@@ -131,12 +128,12 @@ def run_compact(
         deleted = 0
         for snap in to_delete:
             try:
-                zfs.destroy_snapshot(snap, dst_executor, dry_run=False, verbose=verbose)
+                zfs.destroy_snapshot(snap, dst_executor, dry_run=dry_run, verbose=verbose)
                 deleted += 1
             except ExecutorError as e:
                 print(f"  ERROR destroying {snap.full_name}: {e}", file=sys.stderr)
                 any_error = True
 
-        print(f"  Deleted {deleted} of {len(to_delete)} snapshot(s).")
+        print("  " + ("[dry run] " if dry_run else "") + f"Deleted {deleted} of {len(to_delete)} snapshot(s).")
 
     return 1 if any_error else 0
