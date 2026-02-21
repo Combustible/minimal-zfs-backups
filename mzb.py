@@ -12,7 +12,6 @@ COMMANDS
   backup   Sync new snapshots from source to destination.
   compact  Prune old snapshots on the destination per retention rules.
   status   Show how many snapshots behind each dataset is.
-  list     Show snapshot counts for each configured dataset.
   discover List datasets in the source pool with auto-snapshot enabled.
 
 HOW BACKUP WORKS
@@ -918,35 +917,6 @@ def cmd_status(args) -> int:
     return 1 if any_error else 0
 
 
-def cmd_list(args) -> int:
-    """List datasets and snapshot counts on source and destination."""
-    try:
-        config = load_job(args.config)
-    except (ConfigError, FileNotFoundError) as e:
-        print(f"Config error: {e}", file=sys.stderr)
-        return 1
-
-    src_exec, dst_exec = _make_executors(config)
-    datasets = config.datasets
-
-    col_w = max((len(d) for d in datasets), default=7) + 2
-    print(f"{'Dataset':<{col_w}} {'Src snaps':>10} {'Dst snaps':>10}")
-    print("-" * (col_w + 22))
-    for src_dataset in datasets:
-        dst_dataset = config.destination.dataset_for(src_dataset)
-        try:
-            src_count = str(len(list_snapshots(src_dataset, src_exec)))
-        except ExecutorError:
-            src_count = "missing"
-        try:
-            dst_count = str(len(list_snapshots(dst_dataset, dst_exec)))
-        except ExecutorError:
-            dst_count = "missing"
-        print(f"{src_dataset:<{col_w}} {src_count:>10} {dst_count:>10}")
-
-    return 0
-
-
 def cmd_discover(args) -> int:
     """Discover datasets with auto-snapshot enabled and print YAML datasets block."""
     try:
@@ -996,10 +966,6 @@ def main(argv=None) -> None:
     p_status = sub.add_parser("status", help="Show sync state for each dataset")
     p_status.add_argument("config", help="Path to job YAML config file")
     p_status.set_defaults(func=cmd_status)
-
-    p_list = sub.add_parser("list", help="List datasets and snapshot counts")
-    p_list.add_argument("config", help="Path to job YAML config file")
-    p_list.set_defaults(func=cmd_list)
 
     p_discover = sub.add_parser("discover",
         help="Discover datasets with auto-snapshot and print YAML datasets block")

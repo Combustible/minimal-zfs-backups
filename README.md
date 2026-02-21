@@ -67,7 +67,6 @@ mzb discover job.yaml
 
 # Show sync state (read-only)
 mzb status  job.yaml
-mzb list    job.yaml
 
 # Preview what would be sent (no writes)
 mzb backup  job.yaml --dry-run --verbose
@@ -88,7 +87,6 @@ mzb backup  job.yaml --no-confirm
 | `backup` | Send new snapshots from source to destination |
 | `compact` | Prune snapshots on destination per retention rules |
 | `status` | Show how many snapshots each dataset is behind |
-| `list` | Show snapshot counts for source and destination |
 | `discover` | Print `datasets:` YAML block from auto-snapshot property |
 
 ## Safety
