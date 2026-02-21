@@ -1,7 +1,7 @@
-"""Tests for zbm.backup module."""
+"""Tests for mzb.backup module."""
 from __future__ import annotations
 
-from zbm import run_backup, ExecutorError, DestinationConfig, JobConfig, SourceConfig
+from mzb import run_backup, ExecutorError, DestinationConfig, JobConfig, SourceConfig
 from tests.conftest import MockExecutor, make_standard_responses
 
 SRC = "ipool/home/user"
@@ -217,7 +217,7 @@ def test_backup_send_failure(capsys):
 
     # Patch send_incremental to raise
     with patch(
-        "zbm.send_incremental",
+        "mzb.send_incremental",
         side_effect=ExecutorError(["zfs", "send"], 1, "pipe broken"),
     ):
         config = _make_config()

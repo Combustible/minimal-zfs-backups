@@ -7,21 +7,14 @@ Be maximally concise. Sacrifice grammar for brevity.
 
 ## Project Overview
 
-Python CLI tool (`zbm`) that automates ZFS snapshot replication via `zfs send -I | zfs recv`,
+Python CLI tool (`mzb`) that automates ZFS snapshot replication via `zfs send -I | zfs recv`,
 either locally or over SSH. Rewrite of a 10+ year old bash script (`zfs-offsite-backup.sh`,
-kept for reference). Entry point: `zbm/cli.py`.
+kept for reference). Entry point: `mzb/cli.py`.
 
 ## Architecture
 
 ```
-zbm/
-  models.py    — dataclasses: Snapshot, Dataset, JobConfig, RetentionRule, SourceConfig, DestinationConfig
-  executor.py  — Executor protocol + LocalExecutor + SSHExecutor (dependency injection)
-  config.py    — YAML job config loader/validator
-  zfs.py       — ZFS operations (list_snapshots, find_common_snapshot, send_incremental, destroy_snapshot, ...)
-  backup.py    — backup orchestration (two-pass plan/execute with _DatasetPlan, run_backup)
-  compact.py   — retention/compaction logic (run_compact, _snapshots_to_delete)
-  cli.py       — argparse subcommands: backup, compact, status, list, discover
+mzb.py       — single-file distribution (all logic)
 tests/
   conftest.py  — MockExecutor, realistic snapshot fixtures from real pool data
   test_zfs.py, test_backup.py, test_compact.py
@@ -38,7 +31,7 @@ directly in business logic — use the executor.
 required (key auth via agent). SSHExecutor wraps commands as `ssh -o BatchMode=yes host 'cmd'`.
 
 **One YAML per job**: each backup job (e.g. desktop→server, server→drive) has its own config.
-`zbm discover` auto-discovers datasets with `com.sun:auto-snapshot=true` and prints a YAML
+`mzb discover` auto-discovers datasets with `com.sun:auto-snapshot=true` and prints a YAML
 `datasets:` block for pasting into the config. Discovery is a config helper, not a runtime mode.
 
 **Two-pass backup**: `run_backup` first plans all datasets (sends, rollbacks, errors, skips),
@@ -86,7 +79,7 @@ destination:
   host: <hostname>      # omit for local
   user: <ssh user>
   port: 22
-datasets: [list]        # use 'zbm discover' to auto-generate
+datasets: [list]        # use 'mzb discover' to auto-generate
 compaction:
   - pattern: <regex>    # fullmatch against snapshot name after @
     keep: <int>         # keep N newest; 0 = delete all matching

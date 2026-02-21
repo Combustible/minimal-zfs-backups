@@ -14,5 +14,5 @@ install-dev: ## Install project in editable mode with dev deps.
 test: ## Run pytest.
 	@python -m pytest -v
 
-pylint: ## Run pylint on the zbm package.
-	@python -m pylint zbm tests
+pylint: ## Run pylint on the mzb package.
+	@python -m pylint mzb tests

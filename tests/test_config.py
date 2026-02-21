@@ -1,11 +1,11 @@
-"""Tests for zbm.config module."""
+"""Tests for mzb.config module."""
 from __future__ import annotations
 
 import textwrap
 
 import pytest
 
-from zbm import ConfigError, load_job
+from mzb import ConfigError, load_job
 
 
 def _write_config(tmp_path, yaml_text: str) -> str:

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "zfs-backup-manager"
+name = "minimalist-zfs-backups"
 version = "0.1.0"
 description = "Automate ZFS snapshot replication between pools, locally or over SSH"
 requires-python = ">=3.10"
@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-zbm = "zbm:main"
+mzb = "mzb:main"
 
 [project.optional-dependencies]
 dev = [
@@ -20,7 +20,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-include = ["zbm.py"]
+include = ["mzb.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

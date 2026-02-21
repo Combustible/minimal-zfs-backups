@@ -1,4 +1,4 @@
-"""ZFS Backup Manager — single-file distribution."""
+"""minimalist-zfs-backups — single-file distribution."""
 from __future__ import annotations
 
 import argparse
@@ -413,7 +413,7 @@ def destroy_snapshot(
     executor.run(cmd)
 
 
-# Namespace alias so `from zbm import zfs` continues to work in tests
+# Namespace alias so `from mzb import zfs` continues to work in tests
 zfs = _types.SimpleNamespace(
     list_datasets=list_datasets,
     list_snapshots=list_snapshots,
@@ -1012,8 +1012,8 @@ def cmd_discover(args) -> int:
 
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(
-        prog="zbm",
-        description="ZFS Backup Manager — sync snapshots between pools",
+        prog="mzb",
+        description="minimalist-zfs-backups — sync snapshots between pools",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

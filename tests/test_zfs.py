@@ -1,8 +1,8 @@
-"""Tests for zbm.zfs module."""
+"""Tests for mzb.zfs module."""
 from __future__ import annotations
 
-from zbm import zfs
-from zbm import Snapshot
+from mzb import zfs
+from mzb import Snapshot
 from tests.conftest import DST_USER_SNAPS, MockExecutor, SRC_USER_SNAPS, make_standard_responses
 
 
@@ -71,7 +71,7 @@ def test_dataset_exists_true():
 
 
 def test_dataset_exists_false():
-    from zbm import ExecutorError  # pylint: disable=import-outside-toplevel
+    from mzb import ExecutorError  # pylint: disable=import-outside-toplevel
 
     exec_ = MockExecutor({
         ("zfs", "list", "-H", "-o", "name", "ipool/nonexistent"):

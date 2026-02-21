@@ -15,7 +15,7 @@ This guide shows how to reach a much stronger posture:
 
 ## Overview
 
-`zbm` runs entirely on the **source** machine. For remote destinations it SSHes
+`mzb` runs entirely on the **source** machine. For remote destinations it SSHes
 in and runs a small set of ZFS commands:
 
 | Command | Purpose |
@@ -35,7 +35,7 @@ at the kernel level — no elevated shell access required.
 
 On the destination server and/or the source machine:
 ```
-useradd -m -s /usr/bin/rbash zbm
+useradd -m -s /usr/bin/rbash mzb
 ```
 
 `rbash` is a somewhat more restricted shell that limits the user's ability to
@@ -46,22 +46,22 @@ additional security vs `bash`. `-m` creates a home directory for the user.
 
 ## Step 2: Delegate ZFS permissions
 
-Grant the `zbm` user exactly the permissions it needs, scoped to your backup
+Grant the `mzb` user exactly the permissions it needs, scoped to your backup
 dataset subtree.
 
 On the sender, this should be at least:
 ```
-sudo zfs allow -u zbm send,hold sourcepool
+sudo zfs allow -u mzb send,hold sourcepool
 ```
 
 On the receiver, this should be at least:
 ```
-sudo zfs allow -u zbm mount,hold,create,receive,rollback,destroy destpool/BACKUP
+sudo zfs allow -u mzb mount,hold,create,receive,rollback,destroy destpool/BACKUP
 ```
 
 Replace `destpool/BACKUP` with your actual `pool/prefix` combination (matching
 `pool` + `prefix` in your job YAML). Permissions are inherited by all child
-datasets, so this single command covers every dataset `zbm` will ever create
+datasets, so this single command covers every dataset `mzb` will ever create
 under that prefix.
 
 Note that `destroy` requires the `mount` permission, `send` and `receive`
@@ -81,23 +81,23 @@ Use a separate key for each backup job — never reuse your personal key for
 automated processes:
 
 ```
-ssh-keygen -t ed25519 -f ~/.ssh/id_zbm_desktop_to_server -C "zbm@desktop-backup" -N ""
+ssh-keygen -t ed25519 -f ~/.ssh/id_mzb_desktop_to_server -C "mzb@desktop-backup" -N ""
 ```
 
 The `-N ""` sets an empty passphrase so cron can use it without an agent. For
 added security, you can use a password and make the key available via an SSH
 agent, but you will need to automate unlocking the key file on reboot prior to
-running `zbm`. 
+running `mzb`.
 
 ---
 
 ## Step 4: Install the key with restrictions on the destination
 
-Add the public key to `/home/zbm/.ssh/authorized_keys` (create the file if
-needed, with permissions `600`, owned by `zbm`):
+Add the public key to `/home/mzb/.ssh/authorized_keys` (create the file if
+needed, with permissions `600`, owned by `mzb`):
 
 ```
-restrict,from="192.168.1.10" ssh-ed25519 AAAA... zbm@desktop-backup
+restrict,from="192.168.1.10" ssh-ed25519 AAAA... mzb@desktop-backup
 ```
 
 Two important restrictions:
@@ -120,7 +120,7 @@ Add a `Match User` block to enforce restrictions at the server level,
 regardless of what the client requests:
 
 ```
-Match User zbm
+Match User mzb
     AllowAgentForwarding no
     AllowTcpForwarding no
     X11Forwarding no
@@ -135,14 +135,14 @@ This is defense-in-depth on top of `authorized_keys`
 
 ## Step 6: Update your job YAML
 
-Change `user: root` to `user: zbm` (or whichever username you chose):
+Change `user: root` to `user: mzb` (or whichever username you chose):
 
 ```yaml
 destination:
   pool: destpool
   prefix: BACKUP
   host: server.local
-  user: zbm          # ← was: root
+  user: mzb          # ← was: root
   port: 22
 ```
 
@@ -151,10 +151,10 @@ destination:
 ## Step 7: Configure the SSH key for cron
 
 The cron job needs to present the right key. The simplest approach is to add a
-`~/.ssh/config` entry for the `zbm` user: 
+`~/.ssh/config` entry for the `mzb` user:
 ```
 Host server.local
-    IdentityFile ~/.ssh/id_zbm_desktop_to_server
+    IdentityFile ~/.ssh/id_mzb_desktop_to_server
     IdentitiesOnly yes
 ```
 
@@ -167,31 +167,31 @@ can find it via the `SSH_AUTH_SOCK` environment variable.
 ## Step 8: Add a cron entry
 
 Run `crontab -e` as the user on the source machine who owns the SSH key and the
-`zbm` virtualenv. Because cron runs with a minimal environment, use the full
-path to the `zbm` binary:
+`mzb` virtualenv. Because cron runs with a minimal environment, use the full
+path to the `mzb` binary:
 
 ```
-0 3 * * * /home/user/.venv/bin/zbm backup /etc/zbm/desktop-to-server.yaml --no-confirm
+0 3 * * * /home/user/.venv/bin/mzb backup /etc/mzb/desktop-to-server.yaml --no-confirm
 ```
 
 A few things to keep in mind:
 
 - **`--no-confirm`** is required — cron is non-interactive, so any prompt would
   cause the job to hang or abort.
-- **Full path to `zbm`** — cron's `PATH` won't include your virtualenv. Use the
+- **Full path to `mzb`** — cron's `PATH` won't include your virtualenv. Use the
   absolute path to the binary inside your venv, or set `PATH` at the top of the
   crontab.
 - **No passphrase / no agent needed** — if you followed Step 3 and generated the
   key with `-N ""`, and Step 7's `~/.ssh/config` is in place, SSH will pick up
   the right key automatically with no further configuration.
 - **Output** — by default cron emails stdout/stderr to the local user. To log to
-  a file instead: append `>> /var/log/zbm.log 2>&1`. To send to the system
-  journal: pipe through `systemd-cat -t zbm`.
+  a file instead: append `>> /var/log/mzb.log 2>&1`. To send to the system
+  journal: pipe through `systemd-cat -t mzb`.
 - **`compact` as a separate job** — if you use compaction, add a second entry on
   a less frequent schedule, e.g. weekly:
 
 ```
-0 4 * * 0 /home/user/.venv/bin/zbm compact /etc/zbm/desktop-to-server.yaml --no-confirm
+0 4 * * 0 /home/user/.venv/bin/mzb compact /etc/mzb/desktop-to-server.yaml --no-confirm
 ```
 
 ---
@@ -202,18 +202,18 @@ Test before committing to cron:
 
 ```
 # Should succeed — lists snapshots on destination
-ssh zbm@server.local zfs list -H -t snapshot destpool/BACKUP
+ssh mzb@server.local zfs list -H -t snapshot destpool/BACKUP
 
 # Dry-run the full backup job
-zbm backup desktop-to-server.yaml --dry-run --verbose
+mzb backup desktop-to-server.yaml --dry-run --verbose
 ```
 
-Check that the `zbm` user cannot do anything outside its sandbox:
+Check that the `mzb` user cannot do anything outside its sandbox:
 
 ```
 # Should fail with permission denied
-ssh zbm@server.local zfs list rpool
-ssh zbm@server.local zfs destroy destpool/someother@snap
+ssh mzb@server.local zfs list rpool
+ssh mzb@server.local zfs destroy destpool/someother@snap
 ```
 
 ---
@@ -226,7 +226,7 @@ With this setup, the automated backup process has:
 - **No sudo** required anywhere
 - **Scoped ZFS permissions** — only `destpool/BACKUP` and its children
 - **IP-locked SSH key** — useless if stolen
-- **No interactive shell** — the `zbm` user cannot be used for anything else
+- **No interactive shell** — the `mzb` user cannot be used for anything else
 
 The attack surface for a compromised source machine is limited to the backup
 dataset subtree on the destination. Primary data on the destination is

@@ -1,11 +1,11 @@
-"""Tests for zbm.compact module."""
+"""Tests for mzb.compact module."""
 from __future__ import annotations
 
 import re
 
 
 
-from zbm import (
+from mzb import (
     _snapshots_to_delete, run_compact,
     ExecutorError,
     DestinationConfig, JobConfig, RetentionRule, Snapshot, SourceConfig,

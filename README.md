@@ -1,4 +1,4 @@
-# zfs-backup-manager
+# minimalist-zfs-backups
 
 Python tool for automating ZFS snapshot replication between pools, locally or over SSH.
 
@@ -19,7 +19,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip3 install -e .
 ```
 
-This installs the `zbm` command into the active environment.
+This installs the `mzb` command into the active environment.
 
 ## Configuration
 
@@ -56,29 +56,29 @@ compaction:                    # retention rules applied to destination only
 
 Compaction patterns use regex fullmatch — they must match the entire snapshot name after `@`.
 
-Use `zbm discover job.yaml` to auto-discover datasets with `com.sun:auto-snapshot=true`
+Use `mzb discover job.yaml` to auto-discover datasets with `com.sun:auto-snapshot=true`
 and print a `datasets:` block you can paste into your config.
 
 ## Usage
 
 ```bash
 # Discover datasets for config bootstrapping
-zbm discover job.yaml
+mzb discover job.yaml
 
 # Show sync state (read-only)
-zbm status  job.yaml
-zbm list    job.yaml
+mzb status  job.yaml
+mzb list    job.yaml
 
 # Preview what would be sent (no writes)
-zbm backup  job.yaml --dry-run --verbose
-zbm compact job.yaml --dry-run --verbose
+mzb backup  job.yaml --dry-run --verbose
+mzb compact job.yaml --dry-run --verbose
 
 # Run for real
-zbm backup  job.yaml
-zbm compact job.yaml
+mzb backup  job.yaml
+mzb compact job.yaml
 
 # Skip confirmation prompts (for cron/automation)
-zbm backup  job.yaml --no-confirm
+mzb backup  job.yaml --no-confirm
 ```
 
 ### Subcommands
@@ -120,7 +120,7 @@ SSH key — no root access or `sudo` required.
 
 ## Bootstrap (first sync)
 
-If a destination dataset doesn't exist yet, `zbm backup` will print the required command:
+If a destination dataset doesn't exist yet, `mzb backup` will print the required command:
 
 ```bash
 zfs send -c ipool/home/user@first-snap | ssh root@server zfs recv xeonpool/BACKUP/ipool/home/user
@@ -129,7 +129,7 @@ zfs send -c ipool/home/user@first-snap | ssh root@server zfs recv xeonpool/BACKU
 Before receiving, set desired properties on the destination dataset
 (e.g. compression, atime, readonly, `com.sun:auto-snapshot=false`).
 
-Run the bootstrap command manually, then subsequent `zbm backup` runs handle incremental updates.
+Run the bootstrap command manually, then subsequent `mzb backup` runs handle incremental updates.
 
 ## Development
 

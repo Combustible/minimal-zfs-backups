@@ -10,7 +10,7 @@ destination:
   user: root               # SSH user (omit to use current user)
   port: 22
 
-# Explicit dataset list. Use 'zbm discover' to auto-discover
+# Explicit dataset list. Use 'mzb discover' to auto-discover
 # all datasets where com.sun:auto-snapshot=true.
 datasets:
   - ipool/home/user
