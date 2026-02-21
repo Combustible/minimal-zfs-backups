@@ -5,7 +5,7 @@ import textwrap
 
 import pytest
 
-from zbm.config import ConfigError, load_job
+from zbm import ConfigError, load_job
 
 
 def _write_config(tmp_path, yaml_text: str) -> str:

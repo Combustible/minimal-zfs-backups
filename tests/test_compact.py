@@ -5,14 +5,10 @@ import re
 
 
 
-from zbm.compact import _snapshots_to_delete, run_compact
-from zbm.executor import ExecutorError
-from zbm.models import (
-    DestinationConfig,
-    JobConfig,
-    RetentionRule,
-    Snapshot,
-    SourceConfig,
+from zbm import (
+    _snapshots_to_delete, run_compact,
+    ExecutorError,
+    DestinationConfig, JobConfig, RetentionRule, Snapshot, SourceConfig,
 )
 from tests.conftest import MockExecutor, _snap_list_output
 

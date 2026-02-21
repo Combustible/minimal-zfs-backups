@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-zbm = "zbm.cli:main"
+zbm = "zbm:main"
 
 [project.optional-dependencies]
 dev = [
@@ -20,7 +20,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["zbm"]
+include = ["zbm.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
