@@ -9,10 +9,10 @@ help: ## Show this help.
 	@awk 'BEGIN {FS = ":.*##";} /^[a-zA-Z0-9_\\-]+:.*##/ {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 install-dev: ## Install project in editable mode with dev deps.
-	@python -m pip install -e ".[dev]"
+	@python3 -m pip install -e ".[dev]"
 
 test: ## Run pytest.
-	@python -m pytest -v
+	@python3 -m pytest -v
 
 pylint: ## Run pylint on the mzb package.
-	@python -m pylint mzb tests
+	@python3 -m pylint mzb tests

@@ -14,11 +14,12 @@ disable=
     missing-function-docstring,
     import-outside-toplevel,
     too-many-arguments,
-    too-many-positional-arguments,
-    too-many-locals,
     too-many-branches,
-    too-many-statements,
     too-many-instance-attributes,
+    too-many-lines,
+    too-many-locals,
+    too-many-positional-arguments,
+    too-many-statements,
     line-too-long,
 
 [REPORTS]

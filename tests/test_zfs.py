@@ -1,15 +1,18 @@
-"""Tests for mzb.zfs module."""
+"""Tests for ZFS operation functions in mzb."""
 from __future__ import annotations
 
-from mzb import zfs
-from mzb import Snapshot
+from mzb import (
+    Snapshot,
+    dataset_exists, find_common_snapshot, list_snapshots,
+    send_incremental, destroy_snapshot,
+)
 from tests.conftest import DST_USER_SNAPS, MockExecutor, SRC_USER_SNAPS, make_standard_responses
 
 
 def test_list_snapshots_basic():
     src_responses, _ = make_standard_responses()
     exec_ = MockExecutor(src_responses)
-    snaps = zfs.list_snapshots("ipool/home/user", exec_)
+    snaps = list_snapshots("ipool/home/user", exec_)
     assert len(snaps) == len(SRC_USER_SNAPS)
     assert snaps[0].name == "zfs-auto-snap_monthly-2025-09-18-1447"
     assert snaps[-1].name == "zfs-auto-snap_frequent-2026-02-17-2215"
@@ -26,7 +29,7 @@ def test_list_snapshots_filters_children():
         ("zfs", "list", "-H", "-o", "name", "-t", "snapshot", "-r", "ipool/home/user"):
             output,
     })
-    snaps = zfs.list_snapshots("ipool/home/user", exec_)
+    snaps = list_snapshots("ipool/home/user", exec_)
     assert len(snaps) == 2
     assert all(s.dataset == "ipool/home/user" for s in snaps)
 
@@ -35,7 +38,7 @@ def test_find_common_snapshot_basic():
     src_snaps = [Snapshot.parse(s) for s in SRC_USER_SNAPS]
     dst_snaps = [Snapshot.parse(s.replace("ipool/home/user", "xeonpool/BACKUP/ipool/home/user"))
                  for s in DST_USER_SNAPS]
-    common = zfs.find_common_snapshot(src_snaps, dst_snaps)
+    common = find_common_snapshot(src_snaps, dst_snaps)
     assert common is not None
     assert common.name == "backup10t-push-2025-11-11"
 
@@ -43,7 +46,7 @@ def test_find_common_snapshot_basic():
 def test_find_common_snapshot_none():
     src_snaps = [Snapshot.parse("ipool/ds@snap-A")]
     dst_snaps = [Snapshot.parse("pool2/ds@snap-B")]
-    common = zfs.find_common_snapshot(src_snaps, dst_snaps)
+    common = find_common_snapshot(src_snaps, dst_snaps)
     assert common is None
 
 
@@ -58,7 +61,7 @@ def test_find_common_snapshot_returns_newest_common():
         Snapshot.parse("pool2/ds@snap-1"),
         Snapshot.parse("pool2/ds@snap-2"),
     ]
-    common = zfs.find_common_snapshot(src_snaps, dst_snaps)
+    common = find_common_snapshot(src_snaps, dst_snaps)
     assert common.name == "snap-2"
 
 
@@ -67,7 +70,7 @@ def test_dataset_exists_true():
         ("zfs", "list", "-H", "-o", "name", "ipool/home/user"):
             "ipool/home/user\n",
     })
-    assert zfs.dataset_exists("ipool/home/user", exec_) is True
+    assert dataset_exists("ipool/home/user", exec_) is True
 
 
 def test_dataset_exists_false():
@@ -77,7 +80,7 @@ def test_dataset_exists_false():
         ("zfs", "list", "-H", "-o", "name", "ipool/nonexistent"):
             ExecutorError(["zfs", "list"], 1, "dataset does not exist"),
     })
-    assert zfs.dataset_exists("ipool/nonexistent", exec_) is False
+    assert dataset_exists("ipool/nonexistent", exec_) is False
 
 
 def test_send_incremental_dry_run(capsys):
@@ -88,7 +91,7 @@ def test_send_incremental_dry_run(capsys):
     common = Snapshot.parse("ipool/home/user@backup10t-push-2025-11-11")
     latest = Snapshot.parse("ipool/home/user@zfs-auto-snap_frequent-2026-02-17-2215")
 
-    zfs.send_incremental(
+    send_incremental(
         common=common,
         latest=latest,
         src_executor=src_exec,
@@ -108,7 +111,7 @@ def test_send_incremental_dry_run(capsys):
 def test_destroy_snapshot_dry_run(capsys):
     exec_ = MockExecutor({})
     snap = Snapshot.parse("xeonpool/BACKUP/ipool/home/user@old-snap")
-    zfs.destroy_snapshot(snap, exec_, dry_run=True, verbose=True)
+    destroy_snapshot(snap, exec_, dry_run=True, verbose=True)
     captured = capsys.readouterr()
     assert "zfs destroy" in captured.out
     # No actual run call

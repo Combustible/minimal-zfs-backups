@@ -1,4 +1,39 @@
-"""minimalist-zfs-backups — single-file distribution."""
+#!/usr/bin/env python3
+"""
+minimalist-zfs-backups (mzb) — incremental ZFS snapshot replication
+
+OVERVIEW
+  mzb syncs ZFS snapshots from a source pool to a destination pool using
+  'zfs send | zfs recv'. The destination may be local or accessed via SSH.
+  Snapshots are created externally (e.g. zfs-auto-snapshot) — mzb only
+  replicates and prunes them.
+
+COMMANDS
+  backup   Sync new snapshots from source to destination.
+  compact  Prune old snapshots on the destination per retention rules.
+  status   Show how many snapshots behind each dataset is.
+  list     Show snapshot counts for each configured dataset.
+  discover List datasets in the source pool with auto-snapshot enabled.
+
+HOW BACKUP WORKS
+  For each dataset, mzb finds the most recent snapshot present on both source
+  and destination (the "common" snapshot), then sends all newer source
+  snapshots incrementally. If the destination has diverged (i.e. has snapshots
+  after the common point that the source does not), mzb will ask before rolling
+  those back.
+
+  Before backup will work, the destination dataset must be initialized with a
+  full send of the first snapshot:
+    zfs send -c pool/dataset@first | [ssh host] zfs recv -F dest/dataset
+  mzb will print this command when it detects an uninitialized destination, it
+  will never create datasets for you.
+
+HOW COMPACT WORKS
+  Compaction rules are regex patterns with a keep count. For each rule, mzb
+  finds all matching snapshots on the destination and deletes all but the N
+  newest. Rules are applied independently, so a snapshot matching multiple
+  rules is only deleted once.
+"""
 from __future__ import annotations
 
 import argparse
@@ -7,7 +42,6 @@ import re
 import shlex
 import subprocess
 import sys
-import types as _types
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -34,15 +68,6 @@ class Snapshot:
         if not name:
             raise ValueError(f"Not a snapshot: {full_name!r}")
         return cls(dataset=dataset, name=name)
-
-
-@dataclass(frozen=True)
-class Dataset:
-    name: str  # e.g. ipool/home/user
-
-    @property
-    def pool(self) -> str:
-        return self.name.split("/")[0]
 
 
 @dataclass
@@ -89,7 +114,7 @@ class DestinationConfig:
 class JobConfig:
     source: SourceConfig
     destination: DestinationConfig
-    datasets: list[str]          # explicit dataset names
+    datasets: list[str]
     compaction: list[RetentionRule] = field(default_factory=list)
 
 
@@ -133,12 +158,7 @@ class LocalExecutor:
         return "local"
 
     def run(self, cmd: list[str]) -> str:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise ExecutorError(cmd, result.returncode, result.stderr)
         return result.stdout
@@ -172,12 +192,7 @@ class SSHExecutor:
 
     def run(self, cmd: list[str]) -> str:
         full_cmd = self._ssh_prefix() + [shlex.join(cmd)]
-        result = subprocess.run(
-            full_cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = subprocess.run(full_cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise ExecutorError(full_cmd, result.returncode, result.stderr)
         return result.stdout
@@ -275,15 +290,14 @@ def load_job(path: str) -> JobConfig:
 # ============================================================
 
 
-def list_datasets(pool: str, executor: "Executor") -> list[Dataset]:
-    """Return all datasets in a pool (excluding the pool root itself)."""
+def list_datasets(pool: str, executor: "Executor") -> list[str]:
+    """Return all dataset names in a pool (excluding the pool root itself)."""
     output = executor.run(["zfs", "list", "-H", "-o", "name", "-r", pool])
-    results = []
-    for line in output.splitlines():
-        name = line.strip()
-        if name and name != pool:
-            results.append(Dataset(name=name))
-    return results
+    return [
+        line.strip()
+        for line in output.splitlines()
+        if line.strip() and line.strip() != pool
+    ]
 
 
 def list_snapshots(dataset: str, executor: "Executor") -> list[Snapshot]:
@@ -322,20 +336,18 @@ def get_auto_snapshot_property(dataset: str, executor: "Executor") -> bool:
         return False
 
 
-def discover_datasets(pool: str, executor: "Executor") -> list[Dataset]:
-    """Return datasets in pool where com.sun:auto-snapshot is effectively true."""
-    all_ds = list_datasets(pool, executor)
-    return [ds for ds in all_ds if get_auto_snapshot_property(ds.name, executor)]
+def discover_datasets(pool: str, executor: "Executor") -> list[str]:
+    """Return dataset names in pool where com.sun:auto-snapshot is effectively true."""
+    return [
+        ds for ds in list_datasets(pool, executor)
+        if get_auto_snapshot_property(ds, executor)
+    ]
 
 
-def find_common_snapshot(
-    src_snaps: list[Snapshot],
-    dst_snaps: list[Snapshot],
-) -> Snapshot | None:
+def find_common_snapshot(src_snaps: list[Snapshot],dst_snaps: list[Snapshot], ) -> Snapshot | None:
     """Return the most recent snapshot present in both lists, or None."""
     dst_names = {s.name for s in dst_snaps}
-    # Iterate src newest→oldest
-    for snap in reversed(src_snaps):
+    for snap in reversed(src_snaps):  # newest first
         if snap.name in dst_names:
             return snap
     return None
@@ -360,11 +372,7 @@ def send_incremental(
     wire when the source dataset has compression enabled.  It is a safe no-op
     when the source dataset is uncompressed.
     """
-    send_cmd = [
-        "zfs", "send", "-c", "-I",
-        common.full_name,
-        latest.full_name,
-    ]
+    send_cmd = ["zfs", "send", "-c", "-I", common.full_name, latest.full_name]
     recv_cmd = ["zfs", "recv", dst_dataset]
 
     if dry_run or verbose:
@@ -411,19 +419,6 @@ def destroy_snapshot(
     if dry_run:
         return
     executor.run(cmd)
-
-
-# Namespace alias so `from mzb import zfs` continues to work in tests
-zfs = _types.SimpleNamespace(
-    list_datasets=list_datasets,
-    list_snapshots=list_snapshots,
-    dataset_exists=dataset_exists,
-    get_auto_snapshot_property=get_auto_snapshot_property,
-    discover_datasets=discover_datasets,
-    find_common_snapshot=find_common_snapshot,
-    send_incremental=send_incremental,
-    destroy_snapshot=destroy_snapshot,
-)
 
 
 # ============================================================
@@ -482,7 +477,7 @@ class _DatasetPlan:
     rollback_victims: list[Snapshot] = field(default_factory=list)
     # Error/skip reason
     message: str = ""
-    # Bootstrap command (for missing dest or no common snapshot)
+    # Bootstrap command (when dest is missing or has no common snapshot)
     bootstrap_cmd: str = ""
 
 
@@ -493,16 +488,14 @@ def _plan_dataset(
     dst_executor: "Executor",
     verbose: bool = False,
 ) -> _DatasetPlan:
-    """Analyze a dataset and return a plan for what to do."""
+    """Analyze a dataset pair and return a plan for what to do."""
     plan = _DatasetPlan(src_dataset=src_dataset, dst_dataset=dst_dataset)
 
-    # Check source exists
     if not dataset_exists(src_dataset, src_executor):
         plan.action = "error"
         plan.message = f"Source dataset does not exist: {src_dataset}"
         return plan
 
-    # Check destination exists
     if not dataset_exists(dst_dataset, dst_executor):
         plan.action = "error"
         plan.message = f"Destination dataset does not exist: {dst_dataset}"
@@ -513,7 +506,6 @@ def _plan_dataset(
             )
         return plan
 
-    # List snapshots
     src_snaps = list_snapshots(src_dataset, src_executor)
     dst_snaps = list_snapshots(dst_dataset, dst_executor)
 
@@ -525,7 +517,6 @@ def _plan_dataset(
         plan.message = "Source has no snapshots"
         return plan
 
-    # Find common snapshot
     common = find_common_snapshot(src_snaps, dst_snaps)
 
     if common is None:
@@ -585,35 +576,31 @@ def run_backup(
     1. Plan: analyze all datasets, determine actions needed
     2. Execute: prompt once for rollbacks if needed, then send
     """
-    datasets = config.datasets
-
-    if not datasets:
+    if not config.datasets:
         print("No datasets to back up.", file=sys.stderr)
         return 1
 
     # --- Phase 1: Plan ---
     plans: list[_DatasetPlan] = []
-    for src_dataset in datasets:
+    for src_dataset in config.datasets:
         dst_dataset = config.destination.dataset_for(src_dataset)
-        plan = _plan_dataset(
-            src_dataset, dst_dataset, src_executor, dst_executor, verbose
-        )
-        plans.append(plan)
+        plans.append(_plan_dataset(src_dataset, dst_dataset, src_executor, dst_executor, verbose))
+
+    rollback_plans = [p for p in plans if p.action in ("rollback_and_send", "rollback_only")]
+    send_plans    = [p for p in plans if p.action == "send"]
+    up_to_date    = [p for p in plans if p.action == "up_to_date"]
+    error_plans   = [p for p in plans if p.action == "error"]
+    skip_plans    = [p for p in plans if p.action == "skip"]
 
     # --- Print plan summary ---
-    rollback_plans = [p for p in plans if p.action in ("rollback_and_send", "rollback_only")]
-    send_plans = [p for p in plans if p.action == "send"]
-    up_to_date_plans = [p for p in plans if p.action == "up_to_date"]
-    error_plans = [p for p in plans if p.action == "error"]
-    skip_plans = [p for p in plans if p.action == "skip"]
-
     for plan in error_plans:
         print(f"\n{RED}ERROR: {plan.message}{RESET}", file=sys.stderr)
         if plan.bootstrap_cmd:
             print(f"  To initialize, run:\n    {plan.bootstrap_cmd}", file=sys.stderr)
             print(
-                f"  {YELLOW}Consider creating the destination dataset first and then setting desired properties before receiving.\n"
-                f"  (e.g. compression, atime, readonly, com.sun:auto-snapshot=false).{RESET}",
+                f"  {YELLOW}Consider creating the destination dataset first and setting desired\n"
+                f"  properties (e.g. compression, atime, readonly, com.sun:auto-snapshot=false)"
+                f"  before receiving.{RESET}",
                 file=sys.stderr,
             )
 
@@ -621,14 +608,11 @@ def run_backup(
         if plan.message:
             print(f"\n{plan.src_dataset}: {plan.message}")
 
-    for plan in up_to_date_plans:
+    for plan in up_to_date:
         print(f"\n{plan.src_dataset}: {GREEN}Up to date{RESET}")
 
     for plan in send_plans:
-        print(
-            f"\n{plan.src_dataset}: "
-            f"Send {plan.new_snap_count} snapshot(s) up to @{plan.latest.name}"
-        )
+        print(f"\n{plan.src_dataset}: Send {plan.new_snap_count} snapshot(s) up to @{plan.latest.name}")
 
     # --- Phase 2: Prompt for rollbacks ---
     if rollback_plans:
@@ -643,10 +627,10 @@ def run_backup(
                 print(f"    Then send {plan.new_snap_count} new snapshot(s)")
             print()
 
-        if not no_confirm:
-            if not _confirm(("[dry-run] " if dry_run else "") + "Proceed with rollbacks?"):
-                print("Aborted by user.")
-                return 1
+        prompt = ("[dry-run] " if dry_run else "") + "Proceed with rollbacks?"
+        if not no_confirm and not _confirm(prompt):
+            print("Aborted by user.")
+            return 1
 
     # --- Phase 3: Execute ---
     any_error = bool(error_plans)
@@ -658,10 +642,7 @@ def run_backup(
         print(f"Rolling back: {plan.dst_dataset} -> @{plan.common.name}")
         if not dry_run:
             try:
-                dst_executor.run([
-                    "zfs", "rollback", "-r",
-                    f"{plan.dst_dataset}@{plan.common.name}",
-                ])
+                dst_executor.run(["zfs", "rollback", "-r", f"{plan.dst_dataset}@{plan.common.name}"])
                 rollback_count += 1
             except ExecutorError as e:
                 print(f"  {RED}ERROR: Rollback failed: {e}{RESET}", file=sys.stderr)
@@ -671,18 +652,13 @@ def run_backup(
             print(f"  [dry-run] zfs rollback -r {plan.dst_dataset}@{plan.common.name}")
             rollback_count += 1
 
-        # Send after rollback
         if plan.latest:
             print(f"  Sending {plan.new_snap_count} snapshot(s) up to @{plan.latest.name}")
             try:
                 send_incremental(
-                    common=plan.common,
-                    latest=plan.latest,
-                    src_executor=src_executor,
-                    dst_executor=dst_executor,
-                    dst_dataset=plan.dst_dataset,
-                    dry_run=dry_run,
-                    verbose=verbose,
+                    common=plan.common, latest=plan.latest,
+                    src_executor=src_executor, dst_executor=dst_executor,
+                    dst_dataset=plan.dst_dataset, dry_run=dry_run, verbose=verbose,
                 )
                 sent_count += 1
             except ExecutorError as e:
@@ -697,13 +673,9 @@ def run_backup(
         print(f"  {plan.new_snap_count} snapshot(s) up to @{plan.latest.name}")
         try:
             send_incremental(
-                common=plan.common,
-                latest=plan.latest,
-                src_executor=src_executor,
-                dst_executor=dst_executor,
-                dst_dataset=plan.dst_dataset,
-                dry_run=dry_run,
-                verbose=verbose,
+                common=plan.common, latest=plan.latest,
+                src_executor=src_executor, dst_executor=dst_executor,
+                dst_dataset=plan.dst_dataset, dry_run=dry_run, verbose=verbose,
             )
             sent_count += 1
         except ExecutorError as e:
@@ -720,11 +692,11 @@ def run_backup(
         parts.append(f"{sent_count} dataset(s) sent")
     if rollback_count:
         parts.append(f"{rollback_count} rollback(s)")
-    if len(up_to_date_plans):
-        parts.append(f"{len(up_to_date_plans)} already up to date")
-    if len(error_plans):
+    if up_to_date:
+        parts.append(f"{len(up_to_date)} already up to date")
+    if error_plans:
         parts.append(f"{RED}{len(error_plans)} error(s){RESET}")
-    if len(skip_plans):
+    if skip_plans:
         parts.append(f"{len(skip_plans)} skipped")
     if parts:
         print(f"  {', '.join(parts)}")
@@ -744,6 +716,10 @@ def _snapshots_to_delete(
     """
     For each rule, find matching snapshots and mark all but the N newest for deletion.
     Returns the combined list of snapshots to delete (no duplicates, preserving order).
+
+    Rules are matched against snapshot.full_name (e.g. "pool/ds@snap-name").
+    In run_compact, rules are pre-qualified with the destination dataset path so
+    that a rule for one dataset cannot accidentally match another.
     """
     to_delete: list[Snapshot] = []
     seen: set[str] = set()
@@ -756,7 +732,6 @@ def _snapshots_to_delete(
         elif len(matching) <= rule.keep:
             candidates = []
         else:
-            # Keep the N newest; delete the rest
             candidates = matching[: len(matching) - rule.keep]
 
         for snap in candidates:
@@ -784,15 +759,13 @@ def run_compact(
         print("No compaction rules defined in config. Nothing to do.")
         return 0
 
-    datasets = [
-        config.destination.dataset_for(ds) for ds in config.datasets
-    ]
-
     # --- Phase 1: Plan ---
-    # List of (dst_dataset, to_delete) for datasets with work to do
+    # list of (dst_dataset, snapshots_to_delete) for datasets with work to do
     delete_plans: list[tuple[str, list[Snapshot]]] = []
 
-    for dst_dataset in datasets:
+    for src_dataset in config.datasets:
+        dst_dataset = config.destination.dataset_for(src_dataset)
+
         if not dataset_exists(dst_dataset, dst_executor):
             print(f"\n{dst_dataset}: dataset does not exist, skipping.")
             continue
@@ -801,6 +774,8 @@ def run_compact(
         if verbose:
             print(f"\n{dst_dataset}: {len(snaps)} total snapshots")
 
+        # Qualify each rule with the destination dataset path so the regex
+        # matches full_name ("pool/ds@snap") and cannot bleed across datasets.
         qualified_rules = [
             RetentionRule(
                 pattern=re.escape(dst_dataset) + "@" + rule.pattern,
@@ -830,17 +805,10 @@ def run_compact(
         for snap in to_delete:
             print(f"    {snap.full_name}")
 
-    if not no_confirm:
-        try:
-            answer = input(
-                "\n" + ("[dry run] " if dry_run else "") + f"Delete {total} snapshot(s)? [y/N] "
-            ).strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            print("\nAborted by user.")
-            return 1
-        if answer not in ("y", "yes"):
-            print("Aborted by user.")
-            return 1
+    prompt = ("[dry run] " if dry_run else "") + f"Delete {total} snapshot(s)?"
+    if not no_confirm and not _confirm("\n" + prompt):
+        print("Aborted by user.")
+        return 1
 
     # --- Phase 3: Execute ---
     any_error = False
@@ -855,7 +823,6 @@ def run_compact(
             except ExecutorError as e:
                 print(f"  ERROR destroying {snap.full_name}: {e}", file=sys.stderr)
                 any_error = True
-
         print("  " + ("[dry run] " if dry_run else "") + f"Deleted {deleted} of {len(to_delete)} snapshot(s).")
 
     return 1 if any_error else 0
@@ -866,7 +833,7 @@ def run_compact(
 # ============================================================
 
 
-def _make_executors(config):
+def _make_executors(config: JobConfig) -> tuple["Executor", "Executor"]:
     """Build src (always local) and dst (local or SSH) executors from config."""
     src_exec = LocalExecutor()
     if config.destination.is_remote:
@@ -886,7 +853,6 @@ def cmd_backup(args) -> int:
     except (ConfigError, FileNotFoundError) as e:
         print(f"Config error: {e}", file=sys.stderr)
         return 1
-
     src_exec, dst_exec = _make_executors(config)
     return run_backup(
         config=config,
@@ -904,7 +870,6 @@ def cmd_compact(args) -> int:
     except (ConfigError, FileNotFoundError) as e:
         print(f"Config error: {e}", file=sys.stderr)
         return 1
-
     _, dst_exec = _make_executors(config)
     return run_compact(
         config=config,
@@ -924,10 +889,8 @@ def cmd_status(args) -> int:
         return 1
 
     src_exec, dst_exec = _make_executors(config)
-    datasets = config.datasets
-
     any_error = False
-    for src_dataset in datasets:
+    for src_dataset in config.datasets:
         dst_dataset = config.destination.dataset_for(src_dataset)
         try:
             src_snaps = list_snapshots(src_dataset, src_exec)
@@ -943,7 +906,6 @@ def cmd_status(args) -> int:
             continue
 
         common = find_common_snapshot(src_snaps, dst_snaps)
-
         if common is None:
             status = "NO COMMON SNAPSHOT (needs bootstrap)"
         else:
@@ -973,13 +935,11 @@ def cmd_list(args) -> int:
     for src_dataset in datasets:
         dst_dataset = config.destination.dataset_for(src_dataset)
         try:
-            src_snaps = list_snapshots(src_dataset, src_exec)
-            src_count = str(len(src_snaps))
+            src_count = str(len(list_snapshots(src_dataset, src_exec)))
         except ExecutorError:
             src_count = "missing"
         try:
-            dst_snaps = list_snapshots(dst_dataset, dst_exec)
-            dst_count = str(len(dst_snaps))
+            dst_count = str(len(list_snapshots(dst_dataset, dst_exec)))
         except ExecutorError:
             dst_count = "missing"
         print(f"{src_dataset:<{col_w}} {src_count:>10} {dst_count:>10}")
@@ -995,8 +955,7 @@ def cmd_discover(args) -> int:
         print(f"Config error: {e}", file=sys.stderr)
         return 1
 
-    src_exec = LocalExecutor()
-    datasets = discover_datasets(pool, src_exec)
+    datasets = discover_datasets(pool, LocalExecutor())
 
     if not datasets:
         print(f"No datasets with com.sun:auto-snapshot=true found in pool '{pool}'.",
@@ -1005,7 +964,7 @@ def cmd_discover(args) -> int:
 
     print("datasets:")
     for ds in datasets:
-        print(f"  - {ds.name}")
+        print(f"  - {ds}")
 
     return 0
 
@@ -1017,7 +976,6 @@ def main(argv=None) -> None:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # Shared options
     def add_common(p):
         p.add_argument("config", help="Path to job YAML config file")
         p.add_argument("--dry-run", "-n", action="store_true",
