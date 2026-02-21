@@ -2,7 +2,7 @@
 
 Python tool for automating ZFS snapshot replication between pools, locally or over SSH.
 
-Replaces a legacy bash script. Uses `zfs send -I | zfs recv` for efficient incremental transfers.
+Replaces a legacy bash script. Uses `zfs send -c -I | zfs recv` for efficient, compressed incremental transfers.
 
 ## Requirements
 
@@ -105,8 +105,12 @@ zbm backup  job.yaml --no-confirm
 The tool runs only on the source machine. For remote destinations it pipes over SSH:
 
 ```
-zfs send -I pool/dataset@common pool/dataset@latest | ssh user@host zfs recv dest
+zfs send -c -I pool/dataset@common pool/dataset@latest | ssh user@host zfs recv dest
 ```
+
+The `-c` flag sends blocks in their on-disk compressed form, avoiding a
+needless decompress/recompress cycle and reducing bytes transferred over
+the wire. It is a safe no-op when the source dataset is uncompressed.
 
 Requires SSH BatchMode (key-based auth via agent, no password prompts).
 
@@ -119,7 +123,7 @@ SSH key — no root access or `sudo` required.
 If a destination dataset doesn't exist yet, `zbm backup` will print the required command:
 
 ```bash
-zfs send ipool/home/user@first-snap | ssh root@server zfs recv xeonpool/BACKUP/ipool/home/user
+zfs send -c ipool/home/user@first-snap | ssh root@server zfs recv xeonpool/BACKUP/ipool/home/user
 ```
 
 Before receiving, set desired properties on the destination dataset

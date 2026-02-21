@@ -90,10 +90,15 @@ def send_incremental(
     """
     Send all snapshots from common (exclusive) to latest (inclusive) to dst_dataset.
 
-    Uses: zfs send -I pool/dataset@common pool/dataset@latest | [ssh] zfs recv dst_dataset
+    Uses: zfs send -c -I pool/dataset@common pool/dataset@latest | [ssh] zfs recv dst_dataset
+
+    The -c (--compressed) flag sends blocks in their on-disk compressed form,
+    avoiding a needless decompress/recompress cycle and reducing bytes over the
+    wire when the source dataset has compression enabled.  It is a safe no-op
+    when the source dataset is uncompressed.
     """
     send_cmd = [
-        "zfs", "send", "-I",
+        "zfs", "send", "-c", "-I",
         common.full_name,
         latest.full_name,
     ]
