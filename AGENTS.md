@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 This file provides guidance to AI models such as Claude Code when working with this project.
 
@@ -7,18 +7,18 @@ Be maximally concise. Sacrifice grammar for brevity.
 
 ## Project Overview
 
-Python CLI tool (`mzb`) that automates ZFS snapshot replication via `zfs send -I | zfs recv`,
+Python CLI tool (`mzb.py`) that automates ZFS snapshot replication via `zfs send -c -I | zfs recv`,
 either locally or over SSH. Rewrite of a 10+ year old bash script (`zfs-offsite-backup.sh`,
-kept for reference). Entry point: `mzb/cli.py`.
+kept for reference). Single portable file — no installation required, just copy to `$PATH`.
 
 ## Architecture
 
 ```
-mzb.py       — single-file distribution (all logic)
+mzb.py       — single file, all logic (entry point: main())
 tests/
-  conftest.py  — MockExecutor, realistic snapshot fixtures from real pool data
-  test_zfs.py, test_backup.py, test_compact.py
-desktop-to-server.yaml.example — An example configuration file
+  conftest.py   — MockExecutor, make_standard_responses(), shared snapshot fixtures
+  test_zfs.py, test_backup.py, test_compact.py, test_config.py
+desktop-to-server.yaml.example — example configuration file
 ```
 
 ## Key Design Decisions
@@ -38,8 +38,8 @@ required (key auth via agent). SSHExecutor wraps commands as `ssh -o BatchMode=y
 then executes. Rollbacks prompt once upfront with color-coded victim list. Sends never prompt.
 
 **Compaction is destination-only**: retention rules only delete snapshots on the backup target.
-Source snapshots are never touched. Rules use `re.fullmatch` against the full qualified snapshot
-name (`dataset@pattern`), scoped to configured datasets only.
+Source snapshots are never touched. Rules use `re.fullmatch` against the snapshot name after `@`
+(e.g. `"zfs-auto-snap_daily-.*"`), scoped to configured datasets only.
 
 **send_incremental uses `-I`**: sends all intermediate snapshots between common and latest in
 one stream using fully qualified snapshot names. Snapshot names (after `@`) are matched across
@@ -58,15 +58,15 @@ pools to find common point.
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest -v
+make test      # run pytest
+make pylint    # run pylint
 ```
 
-`MockExecutor` in `tests/conftest.py` maps `tuple(cmd) -> stdout_str`. Raise an `ExecutorError`
-instance as a response value to simulate command failures.
+Dev dependencies: `pytest`, `pylint`. No packaging — install them directly via your system or pip.
 
-Fixtures in `conftest.py` (`SRC_USER_SNAPS`, `DST_USER_SNAPS`) use real snapshot names
-from the user's pool for realistic testing.
+`MockExecutor` in `tests/conftest.py` maps `tuple(cmd) -> stdout_str`. Store an `ExecutorError`
+instance as a response value to simulate command failures. Use `make_standard_responses()` to
+get pre-built src/dst response dicts for the standard test dataset.
 
 ## Config Schema Summary
 
@@ -79,7 +79,7 @@ destination:
   host: <hostname>      # omit for local
   user: <ssh user>
   port: 22
-datasets: [list]        # use 'mzb discover' to auto-generate
+datasets: [list]        # use 'mzb.py discover' to auto-generate
 compaction:
   - pattern: <regex>    # fullmatch against snapshot name after @
     keep: <int>         # keep N newest; 0 = delete all matching
