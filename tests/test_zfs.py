@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Byron Marohn
 """Tests for ZFS operation functions in mzb."""
 from __future__ import annotations
 
