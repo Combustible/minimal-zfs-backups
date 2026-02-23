@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Byron Marohn
 """
 minimalist-zfs-backups (mzb) — incremental ZFS snapshot replication
 

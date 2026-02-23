@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Byron Marohn
 .DEFAULT_GOAL := help
 
 .PHONY: help test pylint install-dev
