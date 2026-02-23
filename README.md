@@ -136,16 +136,15 @@ SSH key — no root access or `sudo` required.
 
 ## Bootstrap (first sync)
 
-If a destination dataset doesn't exist yet, `mzb.py backup` will print the required command:
+If a destination dataset doesn't exist yet, `mzb.py backup` will print the
+required command:
 
 ```bash
-zfs send -c ipool/home/user@first-snap | ssh root@server zfs recv xeonpool/BACKUP/ipool/home/user
+zfs send -c ipool/home/user@first-snap | ssh root@server zfs recv -F xeonpool/BACKUP/ipool/home/user
 ```
 
-Before receiving, set desired properties on the destination dataset
-(e.g. compression, atime, readonly, `com.sun:auto-snapshot=false`).
-
-Run the bootstrap command manually, then subsequent `mzb.py backup` runs handle incremental updates.
+Once you run the bootstrap command yourself, then subsequent `mzb.py backup`
+runs handle incremental updates.
 
 ## Development
 
